@@ -1,0 +1,14 @@
+/*
+ * PlatformIO custom partitions.csv for ESP32-CAM
+ * Allocates more space to SPIFFS for storing config/logs if needed
+ * Adjust based on your flash size (4MB typical for ESP32-CAM)
+ */
+
+# Name         Type   SubType  Offset    Size   Flags
+nvs,           data, nvs,     0x9000,   16kB,
+phy_init,      data, phy,     0xf000,   4kB,
+factory,       app,  factory, 0x10000,  1MB,
+ota_0,         app,  ota_0,   0x110000, 1MB,
+ota_1,         app,  ota_1,   0x210000, 1MB,
+; Uncomment if you need filesystem for logs/config storage
+; spiffs,       data, spiffs,  0x310000, 256kB,
