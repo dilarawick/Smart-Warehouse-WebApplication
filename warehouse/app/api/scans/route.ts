@@ -9,7 +9,8 @@ export async function GET() {
     const pool = await getPool();
     const result = await pool.request().query(`
       SELECT TOP 100
-        id, box_id, belt_id, status, raw_payload, ip_address,
+        id, box_id, product_id, product_name, category, 
+        belt_id, status, raw_payload, ip_address,
         FORMAT(scan_time, 'yyyy-MM-dd HH:mm:ss') AS scan_time
       FROM box_scans
       ORDER BY scan_time DESC

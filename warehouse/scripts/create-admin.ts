@@ -12,8 +12,16 @@
  */
 
 import readline from 'readline';
+import path from 'path';
+import { config } from 'dotenv';
+// Load root .env first (workspace .env), then warehouse/.env.local to allow overrides.
+config({ path: path.resolve(__dirname, '../../.env') });
+config({ path: path.resolve(__dirname, '../.env.local') });
 import { getPool } from '../lib/db';
 import { hashPassword } from '../lib/auth';
+
+console.log('Server:', process.env.AZURE_SQL_SERVER || '(not set)');
+console.log('DB_CONNECTION_STRING:', process.env.DB_CONNECTION_STRING ? '[provided]' : '(not set)');
 
 const rl = readline.createInterface({
   input: process.stdin,

@@ -21,8 +21,10 @@ export async function POST(request: Request) {
       .query('SELECT id, username, password_hash, role FROM users WHERE username = @username');
 
     const user = result.recordset[0];
+    console.log('[auth/login] User found:', user);
 
     if (!user) {
+      console.log('[auth/login] No user found with username:', username);
       return NextResponse.json(
         { error: 'Invalid credentials' },
         { status: 401 }
@@ -31,6 +33,7 @@ export async function POST(request: Request) {
 
     // Verify password
     const isValid = await verifyPassword(password, user.password_hash);
+    console.log('[auth/login] Password valid:', isValid);
     if (!isValid) {
       return NextResponse.json(
         { error: 'Invalid credentials' },
@@ -68,7 +71,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('[auth/login POST]', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: String(error) },
       { status: 500 }
     );
   }

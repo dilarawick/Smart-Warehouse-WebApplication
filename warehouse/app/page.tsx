@@ -12,6 +12,9 @@ type User = {
 type Scan = {
   id: number;
   box_id: string;
+  product_id: string | null;
+  product_name: string | null;
+  category: string | null;
   belt_id: string;
   status: 'ok' | 'duplicate' | 'error';
   scan_time: string;
@@ -161,9 +164,11 @@ export default function Dashboard() {
               <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                 <tr>
                   <th className="px-5 py-3 text-left">Box ID</th>
+                  <th className="px-5 py-3 text-left">Product ID</th>
+                  <th className="px-5 py-3 text-left">Product Name</th>
+                  <th className="px-5 py-3 text-left">Category</th>
                   <th className="px-5 py-3 text-left">Belt</th>
                   <th className="px-5 py-3 text-left">Time</th>
-                  <th className="px-5 py-3 text-left">Device IP</th>
                   <th className="px-5 py-3 text-left">Status</th>
                 </tr>
               </thead>
@@ -171,9 +176,17 @@ export default function Dashboard() {
                 {scans.map(s => (
                   <tr key={s.id} className="hover:bg-gray-50">
                     <td className="px-5 py-3 font-mono font-medium">{s.box_id}</td>
+                    <td className="px-5 py-3 font-mono text-sm">{s.product_id || '-'}</td>
+                    <td className="px-5 py-3 font-medium">{s.product_name || '-'}</td>
+                    <td className="px-5 py-3">
+                      {s.category ? (
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {s.category}
+                        </span>
+                      ) : '-'}
+                    </td>
                     <td className="px-5 py-3">{s.belt_id}</td>
                     <td className="px-5 py-3 text-gray-500 text-xs">{s.scan_time}</td>
-                    <td className="px-5 py-3 text-gray-500 font-mono text-xs">{s.ip_address}</td>
                     <td className="px-5 py-3">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusBadge(s.status)}`}>
                         {s.status}
@@ -183,7 +196,7 @@ export default function Dashboard() {
                 ))}
                 {scans.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-5 py-10 text-center text-gray-400">
+                    <td colSpan={7} className="px-5 py-10 text-center text-gray-400">
                       Waiting for scans from ESP32-CAM...
                     </td>
                   </tr>
