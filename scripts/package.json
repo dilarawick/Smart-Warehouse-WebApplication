@@ -1,0 +1,11 @@
+{
+  "name": "warehouse-scripts",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "simulate": "node scripts/simulate-scan.js"
+  },
+  "dependencies": {
+    "mqtt": "^5.0.0"
+  }
+}
