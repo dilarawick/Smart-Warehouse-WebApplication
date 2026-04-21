@@ -33,10 +33,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [esp32Ip, setEsp32Ip] = useState('');
   const [esp32Connected, setEsp32Connected] = useState(false);
-  const [lastScan, setLastScan] = useState<QRScanResult | null>(null);
-  const [scanHistory, setScanHistory] = useState<QRScanResult[]>([]);
-  const videoRef = useRef<HTMLImageElement>(null);
-  const router = useRouter();
+  const [mqttConnected, setMqttConnected] = useState(false);
+  const mqttClientRef = useRef<any | null>(null);
 
   const fetchScans = useCallback(async () => {
     try {
@@ -49,6 +47,55 @@ export default function DashboardPage() {
       console.error('Failed to fetch scans:', err);
     }
   }, []);
+
+  const reconnectMqtt = useCallback(async () => {
+    try {
+      mqttClientRef.current?.end(true);
+      const mqtt = await import('mqtt');
+      const host = process.env.NEXT_PUBLIC_MQTT_BROKER || 'broker.hivemq.com';
+      const protocol = process.env.NEXT_PUBLIC_MQTT_WS_PROTOCOL || 'wss';
+      const port = process.env.NEXT_PUBLIC_MQTT_WS_PORT || '8884';
+      const path = process.env.NEXT_PUBLIC_MQTT_WS_PATH || '/mqtt';
+      const url = `${protocol}://${host}:${port}${path}`;
+      const opts: any = { clientId: `web-client-${Math.random().toString(16).slice(2)}` };
+      if (process.env.NEXT_PUBLIC_MQTT_USER) opts.username = process.env.NEXT_PUBLIC_MQTT_USER;
+      if (process.env.NEXT_PUBLIC_MQTT_PASSWORD) opts.password = process.env.NEXT_PUBLIC_MQTT_PASSWORD;
+
+      const client = mqtt.connect(url, opts);
+      mqttClientRef.current = client;
+
+      client.on('connect', () => {
+        setMqttConnected(true);
+        client.subscribe('warehouse/+/scan', { qos: 0 });
+      });
+
+      client.on('message', (topic: string, payload: Uint8Array) => {
+        try {
+          const msg = payload.toString();
+          let data: any = msg;
+          try { data = JSON.parse(msg); } catch {}
+          const display = typeof data === 'string' ? data : (data.box_id || JSON.stringify(data));
+          const scan: QRScanResult = { data: display, timestamp: new Date(), product_name: data.product_name, category: data.category };
+          setLastScan(scan);
+          setScanHistory((s) => [scan, ...s].slice(0, 50));
+          fetchScans();
+        } catch (err) {
+          console.error('MQTT message handling error', err);
+        }
+      });
+
+      client.on('error', (err: any) => console.error('[MQTT] error', err));
+      client.on('close', () => setMqttConnected(false));
+    } catch (err) {
+      console.error('reconnectMqtt failed', err);
+    }
+  }, [fetchScans]);
+  const [lastScan, setLastScan] = useState<QRScanResult | null>(null);
+  const [scanHistory, setScanHistory] = useState<QRScanResult[]>([]);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const router = useRouter();
+
+  
 
   const submitScan = useCallback(async (data: string) => {
     try {
@@ -64,8 +111,8 @@ export default function DashboardPage() {
   }, []);
 
   const connectToEsp32 = useCallback(() => {
+    // retained for backward-compat UX but we do not recommend connecting directly to ESP32
     if (!esp32Ip) return;
-    
     const url = `http://${esp32Ip}/stream`;
     if (videoRef.current) {
       videoRef.current.src = url;
@@ -109,6 +156,67 @@ export default function DashboardPage() {
       return () => clearInterval(interval);
     }
   }, [loading, fetchScans]);
+
+  // MQTT over WebSockets: subscribe to scans and update UI live
+  useEffect(() => {
+    let mounted = true;
+    let client: any = null;
+
+    async function startMqtt() {
+      try {
+        const mqtt = await import('mqtt');
+        // build broker URL from public env vars (set NEXT_PUBLIC_MQTT_BROKER, NEXT_PUBLIC_MQTT_USER, NEXT_PUBLIC_MQTT_PASSWORD)
+        const host = process.env.NEXT_PUBLIC_MQTT_BROKER || 'broker.hivemq.com';
+        const protocol = process.env.NEXT_PUBLIC_MQTT_WS_PROTOCOL || 'wss';
+        const port = process.env.NEXT_PUBLIC_MQTT_WS_PORT || '8884';
+        const path = process.env.NEXT_PUBLIC_MQTT_WS_PATH || '/mqtt';
+        const url = `${protocol}://${host}:${port}${path}`;
+        const opts: any = { clientId: `web-client-${Math.random().toString(16).slice(2)}` };
+        if (process.env.NEXT_PUBLIC_MQTT_USER) opts.username = process.env.NEXT_PUBLIC_MQTT_USER;
+        if (process.env.NEXT_PUBLIC_MQTT_PASSWORD) opts.password = process.env.NEXT_PUBLIC_MQTT_PASSWORD;
+        client = mqtt.connect(url, opts);
+        mqttClientRef.current = client;
+
+        client.on('connect', () => {
+          if (!mounted) return;
+          setMqttConnected(true);
+          // subscribe to all belt scans
+          client.subscribe('warehouse/+/scan', { qos: 0 });
+        });
+
+        client.on('message', (topic: string, payload: Uint8Array) => {
+          if (!mounted) return;
+          try {
+            const msg = payload.toString();
+            // try parse JSON, otherwise treat as raw string
+            let data: any = msg;
+            try { data = JSON.parse(msg); } catch {}
+
+            const display = typeof data === 'string' ? data : (data.box_id || JSON.stringify(data));
+            const scan: QRScanResult = { data: display, timestamp: new Date(), product_name: data.product_name, category: data.category };
+            setLastScan(scan);
+            setScanHistory((s) => [scan, ...s].slice(0, 50));
+            // refresh server-side scans table
+            fetchScans();
+          } catch (err) {
+            console.error('MQTT message handling error', err);
+          }
+        });
+
+        client.on('error', (err: any) => console.error('[MQTT] error', err));
+        client.on('close', () => { if (mounted) setMqttConnected(false); });
+      } catch (err) {
+        console.error('Failed to load mqtt client', err);
+      }
+    }
+
+    startMqtt();
+
+    return () => {
+      mounted = false;
+      try { mqttClientRef.current?.end(true); } catch {}
+    };
+  }, [fetchScans]);
 
   useEffect(() => {
     return () => { disconnectEsp32(); };
@@ -173,50 +281,46 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-100">ESP32-CAM STREAM</h2>
               <div className="flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${esp32Connected ? 'bg-green-400' : 'bg-gray-500'}`} />
-                <span className="text-xs text-gray-400">{esp32Connected ? 'Connected' : 'Disconnected'}</span>
+                <span className={`w-2 h-2 rounded-full ${mqttConnected ? 'bg-green-400' : 'bg-gray-500'}`} />
+                <span className="text-xs text-gray-400">{mqttConnected ? 'Connected' : 'Disconnected'}</span>
               </div>
             </div>
             <div className="mb-4 flex gap-2">
-              <input
-                type="text"
-                placeholder="ESP32 IP (e.g., 192.168.1.100)"
-                value={esp32Ip}
-                onChange={(e) => setEsp32Ip(e.target.value)}
-                className="flex-1 bg-gray-700 text-white text-sm px-3 py-2 rounded-md border border-gray-600 focus:outline-none focus:border-blue-500"
-              />
+              <div className="flex-1 text-sm text-gray-400">MQTT status: {mqttConnected ? 'Connected' : 'Disconnected'}</div>
               <button
-                onClick={() => esp32Connected ? disconnectEsp32() : connectToEsp32()}
-                disabled={!esp32Ip}
-                className={`px-4 py-2 rounded-md text-sm font-medium ${
-                  esp32Connected 
-                    ? 'bg-red-600 hover:bg-red-700' 
-                    : 'bg-blue-600 hover:bg-blue-700'
-                } text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
+                onClick={() => {
+                  if (mqttConnected) {
+                    try { mqttClientRef.current?.end(true); } catch {}
+                    setMqttConnected(false);
+                  } else {
+                    reconnectMqtt();
+                  }
+                }}
+                className={`px-4 py-2 rounded-md text-sm font-medium ${mqttConnected ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'} text-white transition-colors`}
               >
-                {esp32Connected ? 'Disconnect' : 'Connect'}
+                {mqttConnected ? 'Disconnect MQTT' : 'Connect MQTT'}
               </button>
             </div>
+
             <div className="relative aspect-video bg-gray-900 rounded-lg overflow-hidden">
-              {esp32Connected ? (
-                <img
-                  ref={videoRef as unknown as React.RefObject<HTMLImageElement>}
-                  src={`http://${esp32Ip}/stream`}
-                  alt="ESP32-CAM Stream"
-                  className="w-full h-full object-cover"
-                  onError={() => setEsp32Connected(false)}
-                />
-              ) : (
-                <div className="absolute inset-0 flex items-center justify-center text-gray-400">
+              <div className="absolute inset-0 flex items-center justify-center text-gray-400 px-6">
+                {lastScan ? (
+                  <div className="text-center">
+                    <div className="text-xs text-green-400 mb-1">Last MQTT Scan</div>
+                    <div className="text-xl font-mono text-green-300 break-all">{lastScan.data}</div>
+                    <div className="text-xs text-gray-400 mt-2">{lastScan.timestamp.toLocaleTimeString()}</div>
+                  </div>
+                ) : (
                   <div className="text-center">
                     <svg className="w-16 h-16 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V7" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V4a4 4 0 018 0v3" />
                     </svg>
-                    <p>Enter ESP32 IP and click Connect</p>
-                    <p className="text-xs mt-1">Stream URL: http://[IP]/stream</p>
+                    <p>No live MQTT scans yet</p>
+                    <p className="text-xs mt-1">This dashboard connects to the MQTT broker via WebSockets. Do not connect directly to the ESP32 device IP from the browser.</p>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
 
