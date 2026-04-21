@@ -1,15 +1,21 @@
-/*
- * Smart Warehouse ESP32-CAM - Minimal Stream Version
- */
-
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
 #include "esp_camera.h"
+#include <PubSubClient.h>
 
-const char* WIFI_SSID = "Dilara's A07";
-const char* WIFI_PASSWORD = "Dilara@2005";
+// ========== WiFi ==========
+const char* WIFI_SSID = "YOUR_WIFI";
+const char* WIFI_PASSWORD = "YOUR_PASSWORD";
 
+// ========== MQTT ==========
+const char* MQTT_SERVER = "broker.hivemq.com";
+const int MQTT_PORT = 1883;
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+// ========== Camera ==========
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
 #define XCLK_GPIO_NUM      0
@@ -27,13 +33,31 @@ const char* WIFI_PASSWORD = "Dilara@2005";
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
 
-#define FLASH_LED_PIN      4
+#define FLASH_LED_PIN 4
 
 WebServer server(80);
-bool cameraReady = false;
 
+// ========== STATE ==========
+unsigned long lastPublish = 0;
+
+// ========== MQTT CONNECT ==========
+void reconnectMQTT() {
+  while (!client.connected()) {
+    Serial.println("Connecting to MQTT...");
+    if (client.connect("ESP32-CAM-WAREHOUSE")) {
+      Serial.println("MQTT Connected");
+
+      client.subscribe("warehouse/control");
+    } else {
+      delay(2000);
+    }
+  }
+}
+
+// ========== STREAM HANDLER ==========
 void handleStream() {
   WiFiClient client = server.client();
+
   String response = "HTTP/1.1 200 OK\r\n";
   response += "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n\r\n";
   server.sendContent(response);
@@ -41,26 +65,26 @@ void handleStream() {
   while (client.connected()) {
     camera_fb_t* fb = esp_camera_fb_get();
     if (!fb) break;
-    
-    response = "--frame\r\n";
-    response += "Content-Type: image/jpeg\r\nContent-Length: " + String(fb->len) + "\r\n\r\n";
+
+    response = "--frame\r\nContent-Type: image/jpeg\r\n\r\n";
     server.sendContent(response);
     client.write(fb->buf, fb->len);
     server.sendContent("\r\n");
-    
+
     esp_camera_fb_return(fb);
     delay(50);
   }
 }
 
+// ========== ROOT ==========
 void handleRoot() {
-  String html = "<html><body><h1>ESP32-CAM</h1>";
-  html += "<p><a href='/stream'>Stream</a></p>";
+  String html = "<h2>ESP32-CAM Smart Warehouse</h2>";
+  html += "<p>Stream: /stream</p>";
   html += "<p>IP: " + WiFi.localIP().toString() + "</p>";
-  html += "</body></html>";
   server.send(200, "text/html", html);
 }
 
+// ========== CAMERA INIT ==========
 bool initCamera() {
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
@@ -84,56 +108,77 @@ bool initCamera() {
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
   config.frame_size = FRAMESIZE_SVGA;
-  config.jpeg_quality = 10;
+  config.jpeg_quality = 12;
   config.fb_count = 2;
 
-  esp_err_t err = esp_camera_init(&config);
-  if (err != ESP_OK) {
-    Serial.printf("Camera error: %d\n", err);
-    return false;
-  }
-  return true;
+  return esp_camera_init(&config) == ESP_OK;
 }
 
+// ========== EDGE AI SIMULATION ==========
+String classifyBox() {
+  // Simulated "edge intelligence"
+  int val = random(0, 100);
+
+  if (val < 50) return "A";
+  else return "B";
+}
+
+// ========== SETUP ==========
 void setup() {
   Serial.begin(115200);
-  delay(1000);
-  Serial.println("\n=== ESP32-CAM Starting ===");
 
   pinMode(FLASH_LED_PIN, OUTPUT);
-  digitalWrite(FLASH_LED_PIN, LOW);
 
-  Serial.println("Connecting WiFi...");
+  // WiFi
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  
-  int timeout = 30;
-  while (WiFi.status() != WL_CONNECTED && timeout > 0) {
+  Serial.print("Connecting WiFi");
+
+  while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
-    timeout--;
-  }
-  
-  // Always print IP
-  Serial.printf("\nIP: %s (status=%d)\n", WiFi.localIP().toString().c_str(), WiFi.status());
-
-  Serial.println("Init camera...");
-  cameraReady = initCamera();
-  if (cameraReady) {
-    Serial.println("Camera OK!");
   }
 
-  Serial.println("Start server...");
+  Serial.println("\nWiFi Connected");
+  Serial.println(WiFi.localIP());
+
+  // MQTT
+  client.setServer(MQTT_SERVER, MQTT_PORT);
+
+  // Camera
+  if (!initCamera()) {
+    Serial.println("Camera Failed!");
+    return;
+  }
+
+  // Web server
   server.on("/", handleRoot);
   server.on("/stream", handleStream);
   server.begin();
-  Serial.println("Server started!");
-  
+
   digitalWrite(FLASH_LED_PIN, HIGH);
   delay(200);
   digitalWrite(FLASH_LED_PIN, LOW);
 }
 
+// ========== LOOP ==========
 void loop() {
   server.handleClient();
-  delay(10);
+
+  if (!client.connected()) reconnectMQTT();
+  client.loop();
+
+  // publish every 3 seconds
+  if (millis() - lastPublish > 3000) {
+    lastPublish = millis();
+
+    String category = classifyBox();
+
+    Serial.println("Detected: " + category);
+
+    // MAIN MQTT OUTPUT (to warehouse system)
+    client.publish("warehouse/scan", category.c_str());
+
+    // STATUS FEED (for dashboard)
+    client.publish("warehouse/status", "CAM_ACTIVE");
+  }
 }
