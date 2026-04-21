@@ -1,21 +1,19 @@
 #include <Arduino.h>
 #include <WiFi.h>
-#include <WebServer.h>
-#include "esp_camera.h"
 #include <PubSubClient.h>
+#include "esp_camera.h"
 
-// ========== WiFi ==========
-const char* WIFI_SSID = "YOUR_WIFI";
-const char* WIFI_PASSWORD = "YOUR_PASSWORD";
+// ========== WIFI ==========
+const char* ssid = "YOUR_WIFI";
+const char* password = "YOUR_PASS";
 
 // ========== MQTT ==========
-const char* MQTT_SERVER = "broker.hivemq.com";
-const int MQTT_PORT = 1883;
+const char* mqttServer = "broker.hivemq.com";
 
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-// ========== Camera ==========
+// ========== CAMERA PINS ==========
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
 #define XCLK_GPIO_NUM      0
@@ -33,58 +31,23 @@ PubSubClient client(espClient);
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
 
-#define FLASH_LED_PIN 4
-
-WebServer server(80);
-
-// ========== STATE ==========
-unsigned long lastPublish = 0;
-
-// ========== MQTT CONNECT ==========
-void reconnectMQTT() {
+// ========== CONNECT MQTT ==========
+void reconnect() {
   while (!client.connected()) {
-    Serial.println("Connecting to MQTT...");
-    if (client.connect("ESP32-CAM-WAREHOUSE")) {
-      Serial.println("MQTT Connected");
-
-      client.subscribe("warehouse/control");
-    } else {
-      delay(2000);
-    }
+    client.connect("ESP32_CAM_QR");
   }
 }
 
-// ========== STREAM HANDLER ==========
-void handleStream() {
-  WiFiClient client = server.client();
+// ========== SIMULATED QR RESULT ==========
+String readQRCodeMock() {
+  // In real system: QR library decodes image
+  int r = random(0, 2);
 
-  String response = "HTTP/1.1 200 OK\r\n";
-  response += "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n\r\n";
-  server.sendContent(response);
-
-  while (client.connected()) {
-    camera_fb_t* fb = esp_camera_fb_get();
-    if (!fb) break;
-
-    response = "--frame\r\nContent-Type: image/jpeg\r\n\r\n";
-    server.sendContent(response);
-    client.write(fb->buf, fb->len);
-    server.sendContent("\r\n");
-
-    esp_camera_fb_return(fb);
-    delay(50);
-  }
+  if (r == 0) return "A";
+  else return "B";
 }
 
-// ========== ROOT ==========
-void handleRoot() {
-  String html = "<h2>ESP32-CAM Smart Warehouse</h2>";
-  html += "<p>Stream: /stream</p>";
-  html += "<p>IP: " + WiFi.localIP().toString() + "</p>";
-  server.send(200, "text/html", html);
-}
-
-// ========== CAMERA INIT ==========
+// ========== SETUP CAMERA ==========
 bool initCamera() {
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
@@ -107,78 +70,44 @@ bool initCamera() {
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = FRAMESIZE_SVGA;
+  config.frame_size = FRAMESIZE_VGA;
   config.jpeg_quality = 12;
-  config.fb_count = 2;
+  config.fb_count = 1;
 
   return esp_camera_init(&config) == ESP_OK;
-}
-
-// ========== EDGE AI SIMULATION ==========
-String classifyBox() {
-  // Simulated "edge intelligence"
-  int val = random(0, 100);
-
-  if (val < 50) return "A";
-  else return "B";
 }
 
 // ========== SETUP ==========
 void setup() {
   Serial.begin(115200);
 
-  pinMode(FLASH_LED_PIN, OUTPUT);
-
-  // WiFi
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("Connecting WiFi");
-
+  WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
 
-  Serial.println("\nWiFi Connected");
-  Serial.println(WiFi.localIP());
+  client.setServer(mqttServer, 1883);
 
-  // MQTT
-  client.setServer(MQTT_SERVER, MQTT_PORT);
-
-  // Camera
   if (!initCamera()) {
-    Serial.println("Camera Failed!");
-    return;
+    Serial.println("Camera failed");
   }
 
-  // Web server
-  server.on("/", handleRoot);
-  server.on("/stream", handleStream);
-  server.begin();
-
-  digitalWrite(FLASH_LED_PIN, HIGH);
-  delay(200);
-  digitalWrite(FLASH_LED_PIN, LOW);
+  Serial.println("ESP32-CAM QR Ready");
 }
 
 // ========== LOOP ==========
 void loop() {
-  server.handleClient();
-
-  if (!client.connected()) reconnectMQTT();
+  if (!client.connected()) reconnect();
   client.loop();
 
-  // publish every 3 seconds
-  if (millis() - lastPublish > 3000) {
-    lastPublish = millis();
+  // STEP 1: capture QR (simulated)
+  String category = readQRCodeMock();
 
-    String category = classifyBox();
+  Serial.println("QR Detected: " + category);
 
-    Serial.println("Detected: " + category);
+  // STEP 2: publish to MQTT
+  client.publish("warehouse/scan", category.c_str());
 
-    // MAIN MQTT OUTPUT (to warehouse system)
-    client.publish("warehouse/scan", category.c_str());
-
-    // STATUS FEED (for dashboard)
-    client.publish("warehouse/status", "CAM_ACTIVE");
-  }
+  delay(3000);
 }
