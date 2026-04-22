@@ -5,20 +5,21 @@
 #include <PubSubClient.h>
 #include <ESP32Servo.h>
 #include "esp_camera.h"
+#include <WiFiClientSecure.h>
 
 // ============== WIFI CONFIG ==============
 const char* ssid     = "";
 const char* password = "";
 
 // ============== MQTT CONFIG ==============
-const char* mqttServer   = "broker.hivemq.com";
-const int   mqttPort     = 1883;
-const char* mqttUser     = nullptr;
-const char* mqttPass     = nullptr;
+const char* mqttServer = "fd9d4523e84b4b22b1f3ff686ffbc123.s1.eu.hivemq.cloud";
+const int mqttPort = 8883; // HiveMQ Cloud TLS port
+const char* mqttUser = "Dilara"; // set to your HiveMQ Cloud user
+const char* mqttPass = "Dilara@2005"; // set to your HiveMQ Cloud password
 const char* beltId       = "Belt-1";
 const char* mqttClientId = "ESP32_CAM_SERVO_001";
 
-WiFiClient   wifiClient;
+WiFiClientSecure wifiClient;
 PubSubClient mqttClient(wifiClient);
 
 // ============== SERVO CONFIG ==============
@@ -50,11 +51,18 @@ const unsigned long SERVO_HOLD_MS = 1000;
 #define HREF_GPIO_NUM   23
 #define PCLK_GPIO_NUM   22
 
+// On AI-Thinker boards the onboard flash LED is usually on GPIO 4
+#define FLASH_LED_PIN 4
+
 // ============== HTTP SERVER ==============
 WebServer server(80);
 
 void handleFrame() {
+  // Turn on flash LED briefly while capturing to improve exposure
+  digitalWrite(FLASH_LED_PIN, HIGH);
+  delay(80); // small delay to let LED light up
   camera_fb_t* fb = esp_camera_fb_get();
+  digitalWrite(FLASH_LED_PIN, LOW);
   if (!fb) { server.send(503, "text/plain", "Capture failed"); return; }
   server.sendHeader("Access-Control-Allow-Origin", "*");
   server.send_P(200, "image/jpeg", (const char*)fb->buf, fb->len);
@@ -115,18 +123,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   memcpy(message, payload, msgLen);
 
   Serial.printf("[MQTT] Topic: %s | Msg: %s\n", topic, message);
-
-    // ======= DEBUG: auto-respond to scan triggers (temp) =======
-    // Useful to verify ESP servo logic without the web app.
-    if (strstr(topic, "/scan") != nullptr && strstr(topic, "/action") == nullptr) {
-      char actionTopic[64];
-      snprintf(actionTopic, sizeof(actionTopic), "warehouse/%s/scan/action", beltId);
-      char response[128];
-      snprintf(response, sizeof(response), "{\"id\":\"%s\",\"action\":\"PASS_B\"}", currentScanId.c_str());
-      mqttClient.publish(actionTopic, response);
-      Serial.println("[TEST] Auto-responded with PASS_B");
-      return;
-    }
+ 
 
   // Manual servo control
   if (strstr(topic, "/servo") != nullptr) {
@@ -208,25 +205,21 @@ bool reconnectMQTT() {
 void publishScanTrigger() {
   if (scanState != IDLE || !mqttClient.connected()) return;
 
-  camera_fb_t* fb = esp_camera_fb_get();
-  if (!fb) { Serial.println("[CAM] Capture failed"); return; }
-
-  // Encode frame to base64 and build JSON payload
-  String b64 = base64Encode(fb->buf, fb->len);
-  esp_camera_fb_return(fb);
-
+  // Build a lightweight payload that includes an HTTP frame URL
+  // The server will fetch the frame over HTTP instead of sending base64 via MQTT.
   currentScanId = String(millis());
-
-  // Build payload: {"id":"...","belt_id":"...","image":"<base64>"}
+  String espIp = WiFi.localIP().toString();
+  String frameUrl = "http://" + espIp + "/frame";
   String payload = "{\"id\":\"" + currentScanId +
                    "\",\"belt_id\":\"" + beltId +
-                   "\",\"image\":\"" + b64 + "\"}";
+                   "\",\"frame_url\":\"" + frameUrl + "\"}";
 
   char topic[64];
   snprintf(topic, sizeof(topic), "warehouse/%s/scan", beltId);
 
-  // MQTT max payload is 256 bytes by default - increase buffer
-  mqttClient.setBufferSize(20000);  // ~15KB for QVGA JPEG base64
+
+  // Keep a larger buffer in case other messages are larger
+  mqttClient.setBufferSize(20000);
 
   if (mqttClient.publish(topic, payload.c_str(), false)) {
     Serial.printf("[MQTT] Frame sent, scan ID: %s\n", currentScanId.c_str());
@@ -286,7 +279,14 @@ void setup() {
   sliderServo.write(SERVO_RETRACTED);
   Serial.println("[SERVO] Ready on GPIO 13");
 
+  // Initialize flash LED pin
+  pinMode(FLASH_LED_PIN, OUTPUT);
+  digitalWrite(FLASH_LED_PIN, LOW);
+
   ensureWiFi();
+
+  // For HiveMQ Cloud TLS: allow insecure (no CA) quick-start. Replace with setCACert() in production.
+  wifiClient.setInsecure();
 
   mqttClient.setServer(mqttServer, mqttPort);
   mqttClient.setCallback(mqttCallback);

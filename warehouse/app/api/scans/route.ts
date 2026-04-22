@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
+import { startMqttSubscriber } from '@/lib/mqttSubscriber';
+
+// Ensure MQTT subscriber starts when the scans API is first invoked
+startMqttSubscriber();
 import sql from 'mssql';
 
 // GET /api/scans - fetch recent scans
@@ -7,7 +11,7 @@ export async function GET() {
   try {
     const pool = await getPool();
     const result = await pool.request().query(`
-      SELECT TOP 50 box_id, product_name, category, belt_id, scan_time
+      SELECT TOP 50 box_id, product_name, category, belt_id, scan_time, raw_payload
       FROM box_scans
       ORDER BY scan_time DESC
     `);

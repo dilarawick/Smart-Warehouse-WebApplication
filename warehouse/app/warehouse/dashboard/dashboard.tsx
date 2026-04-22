@@ -19,6 +19,7 @@ interface Scan {
   belt_id: string;
   status: string;
   scan_time: string;
+  raw_payload?: string;
 }
 
 interface QRScanResult {
@@ -35,6 +36,7 @@ export default function DashboardPage() {
   const [esp32Ip, setEsp32Ip] = useState('');
   const [esp32Connected, setEsp32Connected] = useState(false);
   const [mqttConnected, setMqttConnected] = useState(false);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const mqttClientRef = useRef<any | null>(null);
 
   const fetchScans = useCallback(async () => {
@@ -76,6 +78,16 @@ export default function DashboardPage() {
           let data: any = msg;
           try { data = JSON.parse(msg); } catch {}
           const display = typeof data === 'string' ? data : (data.box_id || JSON.stringify(data));
+          // If message contains a frame_url or inline image, set preview immediately
+          if (data && typeof data === 'object') {
+            if (data.frame_url) {
+              const sep = data.frame_url.includes('?') ? '&' : '?';
+              setPreviewSrc(`${data.frame_url}${sep}ts=${Date.now()}`);
+            } else if (data.image || data.image_base64 || data.frame_base64) {
+              const b64 = data.image || data.image_base64 || data.frame_base64;
+              setPreviewSrc(`data:image/jpeg;base64,${b64}`);
+            }
+          }
           const scan: QRScanResult = { data: display, timestamp: new Date(), product_name: data.product_name, category: data.category };
           setLastScan(scan);
           setScanHistory((s) => [scan, ...s].slice(0, 50));
@@ -95,6 +107,27 @@ export default function DashboardPage() {
   const [scanHistory, setScanHistory] = useState<QRScanResult[]>([]);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const router = useRouter();
+
+  // Derive latest captured image (if any) from fetched scans
+  const latestRaw = scans.length > 0 ? scans[0].raw_payload : null;
+  let latestImageSrc: string | null = null;
+  if (latestRaw) {
+    try {
+      const parsed = typeof latestRaw === 'string' ? JSON.parse(latestRaw) : latestRaw;
+      if (parsed.image) {
+        latestImageSrc = `data:image/jpeg;base64,${parsed.image}`;
+      } else if (parsed.frame_base64) {
+        latestImageSrc = `data:image/jpeg;base64,${parsed.frame_base64}`;
+      } else if (parsed.frame_url) {
+        const sep = parsed.frame_url.includes('?') ? '&' : '?';
+        latestImageSrc = `${parsed.frame_url}${sep}ts=${Date.now()}`;
+      } else if (parsed.image_base64) {
+        latestImageSrc = `data:image/jpeg;base64,${parsed.image_base64}`;
+      }
+    } catch (err) {
+      // ignore parse errors
+    }
+  }
 
   
 
@@ -293,6 +326,17 @@ const mqttModule = await import('mqtt');
             let data: any = msg;
             try { data = JSON.parse(msg); } catch {}
 
+            // Set preview immediately if frame URL or inline image present
+            if (data && typeof data === 'object') {
+              if (data.frame_url) {
+                const sep = data.frame_url.includes('?') ? '&' : '?';
+                setPreviewSrc(`${data.frame_url}${sep}ts=${Date.now()}`);
+              } else if (data.image || data.image_base64 || data.frame_base64) {
+                const b64 = data.image || data.image_base64 || data.frame_base64;
+                setPreviewSrc(`data:image/jpeg;base64,${b64}`);
+              }
+            }
+
             const display = typeof data === 'string' ? data : (data.box_id || JSON.stringify(data));
             const scan: QRScanResult = { data: display, timestamp: new Date(), product_name: data.product_name, category: data.category };
             setLastScan(scan);
@@ -405,7 +449,9 @@ const mqttModule = await import('mqtt');
 
             <div className="relative aspect-video bg-gray-900 rounded-lg overflow-hidden">
               <div className="absolute inset-0 flex items-center justify-center text-gray-400 px-6">
-                {lastScan ? (
+                {(previewSrc || latestImageSrc) ? (
+                  <img src={previewSrc || latestImageSrc || ''} alt="Latest capture" className="object-contain w-full h-full" />
+                ) : lastScan ? (
                   <div className="text-center">
                     <div className="text-xs text-green-400 mb-1">Last MQTT Scan</div>
                     <div className="text-xl font-mono text-green-300 break-all">{lastScan.data}</div>
