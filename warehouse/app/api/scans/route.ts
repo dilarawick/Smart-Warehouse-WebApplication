@@ -2,6 +2,22 @@ import { NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import sql from 'mssql';
 
+// GET /api/scans - fetch recent scans
+export async function GET() {
+  try {
+    const pool = await getPool();
+    const result = await pool.request().query(`
+      SELECT TOP 50 box_id, product_name, category, belt_id, scan_time
+      FROM box_scans
+      ORDER BY scan_time DESC
+    `);
+    return NextResponse.json(result.recordset);
+  } catch (err) {
+    console.warn('[SCANS GET] DB unavailable, returning empty:', err);
+    return NextResponse.json([]);
+  }
+}
+
 // ---------------------------------------------------------------
 // POST /api/scan
 //

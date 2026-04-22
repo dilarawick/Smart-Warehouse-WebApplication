@@ -54,11 +54,13 @@ export default function Dashboard() {
   const fetchScans = async () => {
     try {
       const res = await fetch('/api/scans');
-      const data = await res.json();
+      if (!res.ok) throw new Error('Server error');
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : [];
       setScans(data);
       setLastSync(new Date().toLocaleTimeString());
     } catch (err) {
-      console.error('Failed to fetch scans:', err);
+      console.warn('Scan fetch skipped (DB unavailable)');
     }
   };
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import jsQR from 'jsqr';
 
 interface User {
   id: number;
@@ -164,7 +165,8 @@ export default function DashboardPage() {
 
     async function startMqtt() {
       try {
-        const mqtt = await import('mqtt');
+const mqttModule = await import('mqtt');
+        const mqtt = mqttModule.default || mqttModule;
         // build broker URL from public env vars (set NEXT_PUBLIC_MQTT_BROKER, NEXT_PUBLIC_MQTT_USER, NEXT_PUBLIC_MQTT_PASSWORD)
         const host = process.env.NEXT_PUBLIC_MQTT_BROKER || 'broker.hivemq.com';
         const protocol = process.env.NEXT_PUBLIC_MQTT_WS_PROTOCOL || 'wss';
@@ -180,15 +182,114 @@ export default function DashboardPage() {
         client.on('connect', () => {
           if (!mounted) return;
           setMqttConnected(true);
-          // subscribe to all belt scans
-          client.subscribe('warehouse/+/scan', { qos: 0 });
+          console.log('[MQTT] Connected to broker');
+          // subscribe to all scan topics using multi-level wildcard #
+          client.subscribe('warehouse/+/scan/#', { qos: 0 });
+          console.log('[MQTT] Subscribed to warehouse/+/scan/#');
         });
 
-        client.on('message', (topic: string, payload: Uint8Array) => {
+        client.on('message', async (topic: string, payload: Uint8Array) => {
           if (!mounted) return;
           try {
             const msg = payload.toString();
-            // try parse JSON, otherwise treat as raw string
+            const topicStr = topic;
+            console.log('[MQTT MSG]', topicStr, '->', msg.substring(0, 100));
+            
+            // Handle scan trigger from ESP32
+            if (topicStr.includes('/scan/trigger')) {
+              let trigger: any = { belt_id: 'Belt-1' };
+              try { trigger = JSON.parse(msg); } catch {}
+
+              const publishAction = async (action: string, qrData?: string) => {
+                const responseTopic = `warehouse/${trigger.belt_id}/scan/action`;
+                const responsePayload = JSON.stringify({ id: trigger.id, action, qr_data: qrData || 'unknown' });
+                client.publish(responseTopic, responsePayload);
+                console.log('[MQTT] Published action:', action, 'to', responseTopic);
+              };
+
+              try {
+                // If payload contains base64 image, decode it directly in browser
+                const base64 = trigger.frame_base64 || trigger.image_base64 || trigger.image;
+                if (base64) {
+                  try {
+                    const dataUrl = `data:image/jpeg;base64,${base64}`;
+                    const res = await fetch(dataUrl);
+                    const blob = await res.blob();
+                    const imgBitmap = await createImageBitmap(blob);
+                    const canvas = document.createElement('canvas');
+                    canvas.width = imgBitmap.width;
+                    canvas.height = imgBitmap.height;
+                    const ctx = canvas.getContext('2d')!;
+                    ctx.drawImage(imgBitmap, 0, 0);
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const qr = jsQR(imageData.data, canvas.width, canvas.height);
+                    let action = 'PASS_B';
+                    if (qr && qr.data) {
+                      const qrUpper = qr.data.toUpperCase();
+                      if (qrUpper.startsWith('A') || qrUpper.includes('-A-') || qrUpper.includes(':A')) {
+                        action = 'SLIDE_A';
+                      }
+                      console.log('[QR] Decoded from base64:', qr.data, '->', action);
+                      await publishAction(action, qr.data);
+                    } else {
+                      console.log('[QR] No QR detected in base64 -> default PASS_B');
+                      await publishAction('PASS_B');
+                    }
+                    return;
+                  } catch (err) {
+                    console.error('[QR] Base64 decode error:', err);
+                    await publishAction('PASS_B');
+                    return;
+                  }
+                }
+
+                // If frame_url / esp_ip available, fetch image from device
+                const espIp = trigger.esp_ip || (trigger.frame_url ? null : null);
+                if (trigger.frame_url || espIp) {
+                  const fetchUrl = trigger.frame_url || (espIp ? `http://${espIp}/frame` : null);
+                  if (fetchUrl) {
+                    try {
+                      const res = await fetch(fetchUrl);
+                      const blob = await res.blob();
+                      const imgBitmap = await createImageBitmap(blob);
+                      const canvas = document.createElement('canvas');
+                      canvas.width = imgBitmap.width;
+                      canvas.height = imgBitmap.height;
+                      const ctx = canvas.getContext('2d')!;
+                      ctx.drawImage(imgBitmap, 0, 0);
+                      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                      const qr = jsQR(imageData.data, canvas.width, canvas.height);
+                      let action = 'PASS_B';
+                      if (qr && qr.data) {
+                        const qrUpper = qr.data.toUpperCase();
+                        if (qrUpper.startsWith('A') || qrUpper.includes('-A-') || qrUpper.includes(':A')) {
+                          action = 'SLIDE_A';
+                        }
+                        console.log('[QR] Decoded from frame_url:', qr.data, '->', action);
+                        await publishAction(action, qr.data);
+                      } else {
+                        console.log('[QR] No QR detected from frame_url -> default PASS_B');
+                        await publishAction('PASS_B');
+                      }
+                      return;
+                    } catch (err) {
+                      console.error('[QR] Fetch/frame decode error:', err);
+                      await publishAction('PASS_B');
+                      return;
+                    }
+                  }
+                }
+
+                // Fallback: cannot decode image, send PASS_B to unblock ESP
+                await publishAction('PASS_B');
+              } catch (err) {
+                console.error('[QR] Unexpected error:', err);
+                await publishAction('PASS_B');
+              }
+              return;
+            }
+            
+            // Handle scan messages
             let data: any = msg;
             try { data = JSON.parse(msg); } catch {}
 
