@@ -258,7 +258,7 @@ export default function DashboardPage() {
                       const data = await res.json();
                       if (data?.success) {
                         setScanMessage(`DECODED: ${data.qr_data}`);
-                        const event = { data: data.qr_data, timestamp: new Date(), status: 'ok', product_name: null, category: null };
+                        const event = { data: data.qr_data, timestamp: new Date(), status: 'ok', product_name: undefined, category: undefined };
                         setLastScan(event);
                         setScanHistory(prev => [event, ...prev].slice(0,50));
                       } else {

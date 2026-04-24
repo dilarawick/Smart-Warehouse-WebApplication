@@ -63,7 +63,7 @@ async function decodeQrFromBuffer(buffer: Buffer): Promise<string | null> {
     const x = Math.max(0, Math.round((w - size) / 2));
     const y = Math.max(0, Math.round((h - size) / 2));
     const cropped = work.clone().crop(x, y, size, size);
-    try { const sharpenKernel = [0,-1,0,-1,5,-1,0,-1,0]; cropped.convolute && cropped.convolute(sharpenKernel,3,3); } catch(_){}
+    try { const sharpenKernel = [[0,-1,0],[-1,5,-1],[0,-1,0]]; cropped.convolute && cropped.convolute(sharpenKernel); } catch(_){}
     qr = await decodeWithZxing(cropped); if (qr) return qr;
     const cg = cropped.clone().greyscale().contrast(0.8); qr = await decodeWithZxing(cg); if (qr) return qr;
   } catch(_){}
