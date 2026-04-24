@@ -1,0 +1,10 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "SQL_CONNECTION_STRING": "Server=tcp:<server>.database.windows.net,1433;Database=<db>;User ID=<user>;Password=<pass>;Encrypt=true;TrustServerCertificate=false;Connection Timeout=30;",
+    "API_KEY": "change-me"
+  }
+}
+

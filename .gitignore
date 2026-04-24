@@ -1,17 +1,9 @@
-.env
-
-# ESP32-CAM ignores
-.pio/
-.vscode/
-build/
-*.bin
-*.map
-
-# Arduino ignores
-*.zip
-*.tar.gz
-lib/
-
-# OS
+node_modules/
+.next/
+dist/
+.turbo/
 .DS_Store
-Thumbs.db
+
+# Azure Functions local settings (secrets)
+api/local.settings.json
+
