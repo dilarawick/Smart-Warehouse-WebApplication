@@ -239,6 +239,41 @@ export default function DashboardPage() {
             </div>
             <div className="mb-4 flex gap-2">
               <div className="flex-1 text-sm text-gray-400">Server decodes QR → saves to Azure SQL → publishes ack</div>
+              <div className="flex gap-2">
+                <button
+                  onClick={async () => {
+                    try {
+                      setScanMessage('Decoding...');
+                      const body: any = {};
+                      if (previewSrc && previewSrc.startsWith('data:')) {
+                        body.image_base64 = previewSrc.split(',')[1];
+                      } else if (previewSrc) {
+                        // pass the URL directly
+                        body.frame_url = previewSrc.split('?')[0];
+                      }
+                      body.belt_id = 'Belt-1';
+                      const res = await fetch('/api/decode', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+                      });
+                      const data = await res.json();
+                      if (data?.success) {
+                        setScanMessage(`DECODED: ${data.qr_data}`);
+                        const event = { data: data.qr_data, timestamp: new Date(), status: 'ok', product_name: null, category: null };
+                        setLastScan(event);
+                        setScanHistory(prev => [event, ...prev].slice(0,50));
+                      } else {
+                        setScanMessage(`Decode failed`);
+                      }
+                    } catch (err) {
+                      console.error('Decode API error', err);
+                      setScanMessage('Decode error');
+                    }
+                  }}
+                  className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-500"
+                >
+                  Decode Now
+                </button>
+              </div>
             </div>
 
             <div className="relative aspect-video bg-gray-900 rounded-lg overflow-hidden">

@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import Jimp from 'jimp';
 import { MultiFormatReader, BinaryBitmap, HybridBinarizer, RGBLuminanceSource } from '@zxing/library';
+import { getPool } from '@/lib/db';
+import sql from 'mssql';
+import mqtt from 'mqtt';
 
 const zxingReader = new MultiFormatReader();
 
@@ -101,7 +104,80 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, qr_data: null, error: 'No QR found' });
     }
 
-    console.log('[DECODE API] QR decoded:', qrData.substring(0, 100));
+    // Normalize and try to parse structured QR
+    let box_id: string = qrData;
+    let qrParsed: { product_id?: string; product_name?: string; category?: string } | null = null;
+    try { qrParsed = JSON.parse(qrData); } catch {}
+    if (qrParsed) box_id = qrParsed.product_id || box_id;
+
+    // Save scan to DB
+    try {
+      const pool = await getPool();
+      // dedupe within 60s
+      let status = 'ok';
+      try {
+        const dup = await pool.request()
+          .input('box_id', sql.VarChar, box_id)
+          .query(`SELECT 1 FROM box_scans WHERE box_id = @box_id AND scan_time > DATEADD(SECOND, -60, GETDATE())`);
+        status = dup.recordset.length > 0 ? 'duplicate' : 'ok';
+      } catch (e) {
+        console.error('[DECODE API] duplicate check failed', e);
+      }
+
+      const belt_id = body.belt_id || body.belt || 'Belt-1';
+      const product_id = qrParsed?.product_id || null;
+      const product_name = qrParsed?.product_name || null;
+      const category = qrParsed?.category || null;
+
+      await pool.request()
+        .input('box_id', sql.VarChar, box_id)
+        .input('product_id', sql.VarChar, product_id)
+        .input('product_name', sql.VarChar, product_name)
+        .input('category', sql.VarChar, category)
+        .input('belt_id', sql.VarChar, belt_id)
+        .input('status', sql.VarChar, status)
+        .input('raw_payload', sql.NVarChar(sql.MAX), JSON.stringify({ qr: qrData, source: body }))
+        .input('ip_address', sql.VarChar, body.esp_ip || 'server')
+        .query(`
+          INSERT INTO box_scans (box_id, product_id, product_name, category, belt_id, status, raw_payload, ip_address)
+          VALUES (@box_id, @product_id, @product_name, @category, @belt_id, @status, @raw_payload, @ip_address)
+        `);
+    } catch (dbErr) {
+      console.error('[DECODE API] DB save failed', dbErr);
+      return NextResponse.json({ success: false, qr_data: qrData, error: 'DB save failed' }, { status: 500 });
+    }
+
+    console.log('[DECODE API] QR decoded and saved:', qrData.substring(0, 100));
+
+    // Publish ack to MQTT so dashboards/ESP can consume result
+    try {
+      const brokerHost = process.env.MQTT_BROKER || 'broker.hivemq.com';
+      const brokerProtocol = process.env.MQTT_PROTOCOL || 'mqtts';
+      const brokerPort = process.env.MQTT_PORT ? `:${process.env.MQTT_PORT}` : '';
+      const connectUrl = `${brokerProtocol}://${brokerHost}${brokerPort}`;
+      const clientId = process.env.MQTT_SERVER_ID || `nextjs-decode-${Math.random().toString(16).slice(2)}`;
+      const opts: any = { clientId, rejectUnauthorized: false };
+      if (process.env.MQTT_USER) opts.username = process.env.MQTT_USER;
+      if (process.env.MQTT_PASSWORD) opts.password = process.env.MQTT_PASSWORD;
+
+      const client = mqtt.connect(connectUrl, opts);
+      const ackTopic = `warehouse/${belt_id}/scan/ack`;
+      const ackPayload = { status, box_id, product_id, product_name, category: category ? 'found' : 'not_found', timestamp: new Date().toISOString(), server: clientId };
+
+      client.on('connect', () => {
+        try {
+          client.publish(ackTopic, JSON.stringify(ackPayload), { qos: 0, retain: false }, () => {
+            client.end();
+          });
+        } catch (e) {
+          console.error('[DECODE API] MQTT publish error', e);
+          try { client.end(); } catch(_) {}
+        }
+      });
+    } catch (pubErr) {
+      console.error('[DECODE API] MQTT ack failed', pubErr);
+    }
+
     return NextResponse.json({ success: true, qr_data: qrData });
   } catch (err) {
     console.error('[DECODE API] Error:', err);
