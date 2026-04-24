@@ -14,25 +14,42 @@ function extractImageBuffer(body: any): Buffer | null {
   return null;
 }
 
-// jsqr needs a 4-channel RGBA Uint8ClampedArray — exactly what Jimp's bitmap.data is.
-function tryDecodeQR(image: Jimp): string | null {
+// jsqr needs a 4-channel RGBA Uint8ClampedArray.
+// Jimp bitmap.data is a Node Buffer that may share its ArrayBuffer at a
+// non-zero byteOffset — Buffer.from(data) gives a fresh zero-offset copy.
+function tryDecodeQR(image: Jimp, label: string): string | null {
   const { data, width, height } = image.bitmap;
-  const rgba = new Uint8ClampedArray(data.buffer, data.byteOffset, data.length);
+  const rgba = new Uint8ClampedArray(Buffer.from(data));
 
-  // Try normal orientation
   let result = jsQR(rgba, width, height, { inversionAttempts: 'dontInvert' });
-  if (result?.data) return result.data;
+  if (result?.data) {
+    console.log(`[DECODE] Found QR (${label}, normal): ${result.data.substring(0, 80)}`);
+    return result.data;
+  }
 
-  // Try with inversion (handles white-on-black QR codes)
   result = jsQR(rgba, width, height, { inversionAttempts: 'onlyInvert' });
-  if (result?.data) return result.data;
+  if (result?.data) {
+    console.log(`[DECODE] Found QR (${label}, inverted): ${result.data.substring(0, 80)}`);
+    return result.data;
+  }
 
+  console.log(`[DECODE] No QR: ${label} (${width}x${height})`);
   return null;
 }
 
 async function decodeQrFromBuffer(buffer: Buffer): Promise<string | null> {
-  const baseImage = await Jimp.read(buffer);
+  console.log(`[DECODE] Buffer size: ${buffer.length} bytes`);
+
+  let baseImage: Jimp;
+  try {
+    baseImage = await Jimp.read(buffer);
+  } catch (e) {
+    console.error('[DECODE] Jimp.read failed:', e);
+    return null;
+  }
+
   const { width, height } = baseImage.bitmap;
+  console.log(`[DECODE] Image dimensions: ${width}x${height}`);
 
   // Upscale very small images
   let work = baseImage;
@@ -43,73 +60,86 @@ async function decodeQrFromBuffer(buffer: Buffer): Promise<string | null> {
       Math.round(height * scale),
       Jimp.RESIZE_BICUBIC
     );
+    console.log(`[DECODE] Upscaled to ${work.bitmap.width}x${work.bitmap.height}`);
   }
 
-  // Strategy 1: raw image
-  let qr = tryDecodeQR(work);
+  // Strategy 1: raw image (colour)
+  let qr = tryDecodeQR(work, 'raw');
   if (qr) return qr;
 
-  // Strategy 2: grayscale (removes colour noise)
+  // Strategy 2: grayscale
   const grey = work.clone().greyscale();
-  qr = tryDecodeQR(grey);
+  qr = tryDecodeQR(grey, 'grey');
   if (qr) return qr;
 
   // Strategy 3: greyscale + high contrast
-  const highContrast = grey.clone().contrast(0.8);
-  qr = tryDecodeQR(highContrast);
+  qr = tryDecodeQR(grey.clone().contrast(0.8), 'grey+c0.8');
   if (qr) return qr;
 
-  // Strategy 4: greyscale + max contrast (binarise)
-  const binarised = grey.clone().contrast(1.0);
-  qr = tryDecodeQR(binarised);
+  // Strategy 4: greyscale + max contrast (binary-like threshold)
+  qr = tryDecodeQR(grey.clone().contrast(1.0), 'grey+c1.0');
   if (qr) return qr;
 
-  // Strategy 5: greyscale slightly brightened (overexposed prints)
-  const bright = grey.clone().brightness(0.2).contrast(0.6);
-  qr = tryDecodeQR(bright);
+  // Strategy 5: greyscale + brightened (for dark/underlit prints)
+  qr = tryDecodeQR(grey.clone().brightness(0.2).contrast(0.6), 'grey+bright+c0.6');
   if (qr) return qr;
 
-  // Strategy 6: sharpen then binarise
-  const sharp = grey.clone().convolute([
+  // Strategy 6: greyscale + darkened (for overexposed bright prints)
+  qr = tryDecodeQR(grey.clone().brightness(-0.2).contrast(0.8), 'grey+dark+c0.8');
+  if (qr) return qr;
+
+  // Strategy 7: sharpen + contrast (helps with blur from ESP32-CAM)
+  qr = tryDecodeQR(grey.clone().convolute([
     [ 0, -1,  0],
     [-1,  5, -1],
     [ 0, -1,  0],
-  ]).contrast(0.8);
-  qr = tryDecodeQR(sharp);
+  ]).contrast(0.8), 'grey+sharpen+c0.8');
   if (qr) return qr;
 
-  // Strategy 7: scale up 2x (helps with small/blurry QRs)
-  const big = work.clone().scale(2, Jimp.RESIZE_BICUBIC).greyscale().contrast(0.8);
-  qr = tryDecodeQR(big);
+  // Strategy 8: 2x upscale (helps marginal/blurry QR codes)
+  qr = tryDecodeQR(work.clone().scale(2, Jimp.RESIZE_BICUBIC).greyscale().contrast(0.8), '2x+grey+c0.8');
   if (qr) return qr;
 
-  // Strategy 8: centre crop (removes edge clutter)
+  // Strategy 9: centre crop 80% (removes camera-edge noise)
   const cw = Math.round(work.bitmap.width * 0.8);
   const ch = Math.round(work.bitmap.height * 0.8);
   const cx = Math.round((work.bitmap.width - cw) / 2);
   const cy = Math.round((work.bitmap.height - ch) / 2);
-  const cropped = work.clone().crop(cx, cy, cw, ch).greyscale().contrast(0.8);
-  qr = tryDecodeQR(cropped);
+  qr = tryDecodeQR(work.clone().crop(cx, cy, cw, ch).greyscale().contrast(0.8), 'crop80+grey+c0.8');
   if (qr) return qr;
 
+  // Strategy 10: 3x upscale greyscale (last resort for very blurry)
+  qr = tryDecodeQR(work.clone().scale(3, Jimp.RESIZE_BICUBIC).greyscale().contrast(1.0), '3x+grey+c1.0');
+  if (qr) return qr;
+
+  console.log('[DECODE] All strategies exhausted — QR not found');
   return null;
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    console.log('[DECODE API] Keys received:', Object.keys(body));
+
     let buffer: Buffer | null = extractImageBuffer(body);
 
+    if (buffer) {
+      console.log(`[DECODE API] Base64 image received, buffer: ${buffer.length} bytes`);
+    }
+
     if (!buffer && body.frame_url) {
-      console.log('[DECODE API] Fetching frame:', body.frame_url);
+      console.log('[DECODE API] Fetching frame URL:', body.frame_url);
       const res = await fetch(body.frame_url, { cache: 'no-store' });
       if (!res.ok) {
+        console.error(`[DECODE API] Fetch failed: ${res.status}`);
         return NextResponse.json({ error: `Failed: ${res.status}`, success: false }, { status: 200 });
       }
       buffer = Buffer.from(await res.arrayBuffer());
+      console.log(`[DECODE API] Fetched frame, buffer: ${buffer.length} bytes`);
     }
 
     if (!buffer) {
+      console.error('[DECODE API] No image data provided');
       return NextResponse.json({ error: 'No image data provided' }, { status: 400 });
     }
 
@@ -125,11 +155,16 @@ export async function POST(request: Request) {
     try { qrParsed = JSON.parse(qrData); } catch {}
     if (qrParsed) box_id = qrParsed.product_id || box_id;
 
+    const belt_id = body.belt_id || body.belt || 'Belt-1';
+    const product_id = qrParsed?.product_id || null;
+    const product_name = qrParsed?.product_name || null;
+    const category = qrParsed?.category || null;
+
     // Save scan to DB
+    let status = 'ok';
     try {
       const pool = await getPool();
       // dedupe within 60s
-      let status = 'ok';
       try {
         const dup = await pool.request()
           .input('box_id', sql.VarChar, box_id)
@@ -138,11 +173,6 @@ export async function POST(request: Request) {
       } catch (e) {
         console.error('[DECODE API] duplicate check failed', e);
       }
-
-      const belt_id = body.belt_id || body.belt || 'Belt-1';
-      const product_id = qrParsed?.product_id || null;
-      const product_name = qrParsed?.product_name || null;
-      const category = qrParsed?.category || null;
 
       await pool.request()
         .input('box_id', sql.VarChar, box_id)
@@ -164,7 +194,7 @@ export async function POST(request: Request) {
 
     console.log('[DECODE API] QR decoded and saved:', qrData.substring(0, 100));
 
-    // Publish ack to MQTT so dashboards/ESP can consume result
+    // Publish ack to MQTT
     try {
       const brokerHost = process.env.MQTT_BROKER || 'broker.hivemq.com';
       const brokerProtocol = process.env.MQTT_PROTOCOL || 'mqtts';
@@ -186,7 +216,7 @@ export async function POST(request: Request) {
           });
         } catch (e) {
           console.error('[DECODE API] MQTT publish error', e);
-          try { client.end(); } catch(_) {}
+          try { client.end(); } catch (_) {}
         }
       });
     } catch (pubErr) {
