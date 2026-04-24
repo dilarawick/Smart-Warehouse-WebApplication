@@ -1,0 +1,24 @@
+{
+  "name": "smart-warehouse-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "scripts": {
+    "build": "tsc -p .",
+    "dev": "func start",
+    "start": "func start",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@azure/functions": "^4.8.0",
+    "jpeg-js": "^0.4.4",
+    "jsqr": "^1.4.0",
+    "mssql": "^11.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "typescript": "^5.8.2"
+  }
+}
+
