@@ -7,3 +7,8 @@ dist/
 # Azure Functions local settings (secrets)
 api/local.settings.json
 
+# Local environment (secrets)
+.env
+.env.local
+.env.*.local
+
