@@ -262,11 +262,12 @@ export default function DashboardPage() {
                         setLastScan(event);
                         setScanHistory(prev => [event, ...prev].slice(0,50));
                       } else {
-                        setScanMessage(`Decode failed`);
+                        // Display the exact cause (DB save failed, No QR found, etc)
+                        setScanMessage(data?.error ? `Error: ${data.error}` : `Decode failed`);
                       }
                     } catch (err) {
                       console.error('Decode API error', err);
-                      setScanMessage('Decode error');
+                      setScanMessage('Decode error - Check console');
                     }
                   }}
                   className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-500"

@@ -187,9 +187,11 @@ export async function POST(request: Request) {
           INSERT INTO box_scans (box_id, product_id, product_name, category, belt_id, status, raw_payload, ip_address)
           VALUES (@box_id, @product_id, @product_name, @category, @belt_id, @status, @raw_payload, @ip_address)
         `);
-    } catch (dbErr) {
-      console.error('[DECODE API] DB save failed', dbErr);
-      return NextResponse.json({ success: false, qr_data: qrData, error: 'DB save failed' }, { status: 500 });
+    } catch (dbErr: any) {
+      console.error('[DECODE API] DB save failed', dbErr.message);
+      status = 'db_error';
+      // Do not return 500 here! We must proceed to publish the MQTT ACK
+      // so the ESP32-CAM and dashboard don't hang, even if SQL is offline.
     }
 
     console.log('[DECODE API] QR decoded and saved:', qrData.substring(0, 100));
