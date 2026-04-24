@@ -10,7 +10,7 @@ build/
 # Arduino ignores
 *.zip
 *.tar.gz
-lib/
+/lib/
 
 # OS
 .DS_Store
