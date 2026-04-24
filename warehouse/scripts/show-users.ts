@@ -25,7 +25,7 @@ async function run() {
     const rows = await pool.request().query('SELECT TOP (10) id, username, role, created_at FROM users ORDER BY id DESC');
     console.log('Top rows (up to 10):');
     console.table(rows.recordset || []);
-  } catch (err) {
+  } catch (err: any) {
     console.error('Error querying users table:', err.message || err);
     process.exit(1);
   }

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import Jimp from 'jimp';
-import jsQR from 'jsqr';
+import { MultiFormatReader, BarcodeFormat, DecodeHintType, RGBLuminanceSource, BinaryBitmap, HybridBinarizer } from '@zxing/library';
 import { getPool } from '@/lib/db';
 import sql from 'mssql';
 import mqtt from 'mqtt';
@@ -14,26 +14,39 @@ function extractImageBuffer(body: any): Buffer | null {
   return null;
 }
 
-// jsqr needs a 4-channel RGBA Uint8ClampedArray.
-// Jimp bitmap.data is a Node Buffer that may share its ArrayBuffer at a
-// non-zero byteOffset — Buffer.from(data) gives a fresh zero-offset copy.
+// Reusable reader configured for maximum robustness
+const reader = new MultiFormatReader();
+const hints = new Map();
+hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]);
+hints.set(DecodeHintType.TRY_HARDER, true);
+reader.setHints(hints);
+
 function tryDecodeQR(image: Jimp, label: string): string | null {
-  const { data, width, height } = image.bitmap;
-  const rgba = new Uint8ClampedArray(Buffer.from(data));
-
-  let result = jsQR(rgba, width, height, { inversionAttempts: 'dontInvert' });
-  if (result?.data) {
-    console.log(`[DECODE] Found QR (${label}, normal): ${result.data.substring(0, 80)}`);
-    return result.data;
+  try {
+    const { data, width, height } = image.bitmap;
+    // Map RGBA Buffer to single-channel Luminance Array
+    const luminances = new Uint8ClampedArray(width * height);
+    for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+      // Precise standard luminosity conversion
+      luminances[j] = Math.round((data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000);
+    }
+    
+    // Create ZXing structures
+    const source = new RGBLuminanceSource(luminances, width, height);
+    // HybridBinarizer implements adaptive thresholding similar to cv2.adaptiveThreshold
+    const bitmap = new BinaryBitmap(new HybridBinarizer(source));
+    
+    const result = reader.decode(bitmap);
+    if (result && result.getText()) {
+      console.log(`[DECODE] Found QR (${label}): ${result.getText().substring(0, 80)}`);
+      return result.getText();
+    }
+  } catch (err: any) {
+    // ZXing throws NotFoundException if no QR is detected, which is expected.
+    // If it's a different error, we still want to continue to the next strategy.
   }
-
-  result = jsQR(rgba, width, height, { inversionAttempts: 'onlyInvert' });
-  if (result?.data) {
-    console.log(`[DECODE] Found QR (${label}, inverted): ${result.data.substring(0, 80)}`);
-    return result.data;
-  }
-
-  console.log(`[DECODE] No QR: ${label} (${width}x${height})`);
+  
+  console.log(`[DECODE] No QR: ${label} (${image.bitmap.width}x${image.bitmap.height})`);
   return null;
 }
 

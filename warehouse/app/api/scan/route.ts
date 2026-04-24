@@ -1,22 +1,29 @@
 import { NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import sql from 'mssql';
-import jsQR, { type QRCode } from 'jsqr';
 import Jimp from 'jimp';
+import { MultiFormatReader, BarcodeFormat, DecodeHintType, RGBLuminanceSource, BinaryBitmap, HybridBinarizer } from '@zxing/library';
 
-function tryDecodeQR(image: Jimp): QRCode | null {
-  const { data, width, height } = image.bitmap;
-  const pixelArray = new Uint8ClampedArray(data.buffer, data.byteOffset, data.length);
-  
-  // Try normal first
-  let qr = jsQR(pixelArray, width, height, { inversionAttempts: 'dontInvert' });
-  
-  // Try inverted if normal failed
-  if (!qr) {
-    qr = jsQR(pixelArray, width, height, { inversionAttempts: 'attemptBoth' });
-  }
-  
-  return qr;
+const reader = new MultiFormatReader();
+const hints = new Map();
+hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]);
+hints.set(DecodeHintType.TRY_HARDER, true);
+reader.setHints(hints);
+
+function tryDecodeQR(image: Jimp): string | null {
+  try {
+    const { data, width, height } = image.bitmap;
+    const luminances = new Uint8ClampedArray(width * height);
+    for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+      // Fast luminosity formula
+      luminances[j] = Math.round((data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000);
+    }
+    const source = new RGBLuminanceSource(luminances, width, height);
+    const bitmap = new BinaryBitmap(new HybridBinarizer(source));
+    const result = reader.decode(bitmap);
+    if (result && result.getText()) return result.getText();
+  } catch (err: any) {}
+  return null;
 }
 
 function isUrl(s: string | null | undefined): boolean {
@@ -122,11 +129,11 @@ export async function POST(request: Request) {
           qr = tryDecodeQR(img5);
         }
         
-        if (!qr || !qr.data) {
+        if (!qr) {
           return NextResponse.json({ error: 'No QR code found' }, { status: 400 });
         }
         
-        box_id = qr.data;
+        box_id = qr;
         if (isUrl(box_id)) {
           return NextResponse.json({ error: 'QR payload is a link; only raw (non-link) QR data accepted' }, { status: 400 });
         }
