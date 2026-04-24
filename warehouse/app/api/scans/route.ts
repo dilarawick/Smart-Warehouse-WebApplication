@@ -11,7 +11,7 @@ export async function GET() {
   try {
     const pool = await getPool();
     const result = await pool.request().query(`
-      SELECT TOP 50 box_id, product_name, category, belt_id, scan_time, raw_payload
+      SELECT TOP 50 id, box_id, product_id, product_name, category, belt_id, status, scan_time, raw_payload
       FROM box_scans
       ORDER BY scan_time DESC
     `);

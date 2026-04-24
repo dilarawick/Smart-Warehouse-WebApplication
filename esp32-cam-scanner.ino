@@ -60,12 +60,27 @@ WebServer server(80);
 void handleFrame() {
   // Turn on flash LED briefly while capturing to improve exposure
   digitalWrite(FLASH_LED_PIN, HIGH);
-  delay(80); // small delay to let LED light up
+  delay(300);
   camera_fb_t* fb = esp_camera_fb_get();
+  delay(50);
   digitalWrite(FLASH_LED_PIN, LOW);
   if (!fb) { server.send(503, "text/plain", "Capture failed"); return; }
+
+  // Send proper HTTP headers then write raw JPEG bytes to the client
   server.sendHeader("Access-Control-Allow-Origin", "*");
-  server.send_P(200, "image/jpeg", (const char*)fb->buf, fb->len);
+  server.sendHeader("Content-Type", "image/jpeg");
+  server.sendHeader("Content-Length", String(fb->len));
+  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "0");
+
+  // Instruct the WebServer to send headers and then write the body directly
+  server.send(200, "image/jpeg", "");
+  WiFiClient client = server.client();
+  if (client && client.connected()) {
+    client.write(fb->buf, fb->len);
+  }
+
   esp_camera_fb_return(fb);
 }
 
@@ -74,7 +89,7 @@ enum ScanState { IDLE, WAITING_RESPONSE };
 ScanState    scanState       = IDLE;
 unsigned long scanRequestTime = 0;
 const unsigned long SCAN_TIMEOUT_MS  = 5000;
-const unsigned long SCAN_COOLDOWN_MS = 2000;
+const unsigned long SCAN_COOLDOWN_MS = 3000;
 unsigned long lastScanTime   = 0;
 String        currentScanId  = "";
 bool          cameraReady    = false;
@@ -201,35 +216,67 @@ bool reconnectMQTT() {
   return ok;
 }
 
-// ============== PUBLISH SCAN (frame embedded) ==============
+// ============== PUBLISH SCAN (frame embedded as base64) ==============
 void publishScanTrigger() {
   if (scanState != IDLE || !mqttClient.connected()) return;
 
-  // Build a lightweight payload that includes an HTTP frame URL
-  // The server will fetch the frame over HTTP instead of sending base64 via MQTT.
-  currentScanId = String(millis());
+  // Set buffer BEFORE capture since base64 is ~4/3 of original size
+  mqttClient.setBufferSize(120000);
+
+  // Force camera to re-adjust exposure before capture
+  delay(100);
+  
+  // Turn on flash LED briefly while capturing
+  digitalWrite(FLASH_LED_PIN, HIGH);
+  delay(300);
+  camera_fb_t* fb = esp_camera_fb_get();
+  delay(50);
+  digitalWrite(FLASH_LED_PIN, LOW);
+  if (!fb) {
+    Serial.println("[MQTT] Capture failed");
+    scanState    = IDLE;
+    lastScanTime = millis();
+    return;
+  }
+
+  // Base64 encode the JPEG frame
+  String encoded = base64Encode(fb->buf, fb->len);
   String espIp = WiFi.localIP().toString();
-  String frameUrl = "http://" + espIp + "/frame";
-  String payload = "{\"id\":\"" + currentScanId +
+
+  // Use a single consistent scan ID and include it in the frame URL to avoid caching
+  String scanId = String(millis());
+  String frameUrl = "http://" + espIp + "/frame?ts=" + scanId;
+
+  // Build payload with base64 image and frame_url (with ts)
+  String payload = "{\"id\":\"" + scanId +
                    "\",\"belt_id\":\"" + beltId +
-                   "\",\"frame_url\":\"" + frameUrl + "\"}";
+                   "\",\"frame_url\":\"" + frameUrl +
+                   "\",\"frame_base64\":\"" + encoded + "\"}";
 
   char topic[64];
   snprintf(topic, sizeof(topic), "warehouse/%s/scan", beltId);
 
-
-  // Keep a larger buffer in case other messages are larger
-  mqttClient.setBufferSize(20000);
+  // Set currentScanId BEFORE publishing so callbacks can match the ID reliably
+  currentScanId = scanId;
 
   if (mqttClient.publish(topic, payload.c_str(), false)) {
-    Serial.printf("[MQTT] Frame sent, scan ID: %s\n", currentScanId.c_str());
+    Serial.printf("[MQTT] Frame sent (%d bytes), scan ID: %s\n", payload.length(), currentScanId.c_str());
+    scanState         = WAITING_RESPONSE;
+    scanRequestTime   = millis();
+    lastScanTime      = millis();
+  } else {
+    Serial.println("[MQTT] Publish FAILED - falling back to URL only");
+    // Fallback: send URL only if base64 is too large
+    String urlPayload = "{\"id\":\"" + scanId +
+                        "\",\"belt_id\":\"" + beltId +
+                        "\",\"frame_url\":\"" + frameUrl + "\"}";
+    mqttClient.publish(topic, urlPayload.c_str(), false);
     scanState       = WAITING_RESPONSE;
     scanRequestTime = millis();
-    lastScanTime    = millis();  // set ONLY on success
-  } else {
-    Serial.println("[MQTT] Publish FAILED (payload too large?)");
-    // Don't update lastScanTime so we retry sooner
+    lastScanTime    = millis();
   }
+
+  esp_camera_fb_return(fb);
 }
 
 // ============== CAMERA INIT ==============
@@ -251,9 +298,9 @@ bool initCamera() {
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size   = FRAMESIZE_QVGA;
-  config.jpeg_quality = 15;  // slightly lower = smaller payload
-  config.fb_count     = 1;   // 1 buffer saves RAM
+  config.frame_size   = FRAMESIZE_VGA;
+  config.jpeg_quality = 10;
+  config.fb_count     = 1;
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
     Serial.printf("[CAM] Init failed: 0x%x\n", err);
@@ -262,9 +309,24 @@ bool initCamera() {
   sensor_t* s = esp_camera_sensor_get();
   if (s) {
     s->set_brightness(s, 1);
-    s->set_contrast(s, 1);
+    s->set_contrast(s, 2);
     s->set_exposure_ctrl(s, 1);
+    s->set_ae_level(s, 1);
+    s->set_aec2(s, 1);
     s->set_whitebal(s, 1);
+    s->set_awb_gain(s, 1);
+    s->set_saturation(s, -2);
+    s->set_gain_ctrl(s, 1);
+    s->set_gainceiling(s, GAINCEILING_128X);
+    s->set_bpc(s, 1);
+    s->set_wpc(s, 1);
+    s->set_raw_gma(s, 1);
+    s->set_lenc(s, 0);
+    s->set_hmirror(s, 0);
+    s->set_vflip(s, 0);
+    s->set_dcw(s, 1);
+    s->set_colorbar(s, 0);
+    s->set_sharpness(s, 1);
   }
   Serial.println("[CAM] Ready");
   return true;
