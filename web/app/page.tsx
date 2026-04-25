@@ -1,14 +1,8 @@
 import { headers } from "next/headers";
 import { LastCapturePreview } from "./last-capture-preview";
+import { QrScansLive, type ScanRow } from "./qr-scans-live";
 
-type Scan = {
-  Id: number;
-  DeviceId: string;
-  QrText: string;
-  ScannedAtUtc: string;
-};
-
-async function getScans(): Promise<{ items: Scan[] }> {
+async function getScans(): Promise<{ items: ScanRow[] }> {
   const h = await headers();
   const proto = h.get("x-forwarded-proto") ?? "http";
   const host = h.get("x-forwarded-host") ?? h.get("host");
@@ -23,48 +17,26 @@ export default async function HomePage() {
   const data = await getScans();
 
   return (
-    <main style={{ padding: 24, maxWidth: 980, margin: "0 auto" }}>
-      <h1 style={{ margin: "0 0 8px" }}>QR Scans</h1>
-      <p style={{ margin: "0 0 20px", opacity: 0.8 }}>
-        Showing the latest scans stored in Azure SQL, plus a live preview of the last image from the camera.
+    <main style={{ padding: "28px 32px", maxWidth: 1100, margin: "0 auto" }}>
+      <h1 style={{ margin: "0 0 8px", fontSize: 28 }}>Home · QR scans</h1>
+      <p style={{ margin: "0 0 24px", color: "#52525b", lineHeight: 1.5 }}>
+        Latest scans in Azure SQL and a live preview of the last frame from the ESP32‑CAM.
       </p>
 
       <LastCapturePreview />
 
       <div style={{ display: "flex", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
         <code style={{ padding: "8px 10px", background: "#f3f4f6", borderRadius: 8 }}>
-          API: /api/qr/scans
+          GET /api/qr/scans
         </code>
       </div>
 
-      <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "140px 160px 1fr", background: "#f9fafb" }}>
-          <div style={{ padding: 12, fontWeight: 600 }}>Time (UTC)</div>
-          <div style={{ padding: 12, fontWeight: 600 }}>Device</div>
-          <div style={{ padding: 12, fontWeight: 600 }}>QR Text</div>
-        </div>
-        {data.items.length === 0 ? (
-          <div style={{ padding: 12, opacity: 0.7 }}>No scans yet.</div>
-        ) : (
-          data.items.map((x) => (
-            <div
-              key={x.Id}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "140px 160px 1fr",
-                borderTop: "1px solid #e5e7eb",
-              }}
-            >
-              <div style={{ padding: 12, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
-                {new Date(x.ScannedAtUtc).toISOString().slice(11, 19)}
-              </div>
-              <div style={{ padding: 12 }}>{x.DeviceId}</div>
-              <div style={{ padding: 12, wordBreak: "break-word" }}>{x.QrText}</div>
-            </div>
-          ))
-        )}
-      </div>
+      <h2 style={{ margin: "0 0 10px", fontSize: 18 }}>QR scans (SQL)</h2>
+      <p style={{ margin: "0 0 12px", fontSize: 13, color: "#71717a" }}>
+        Refreshes every 1.5s while this page is open (same cadence as the camera preview).
+      </p>
+
+      <QrScansLive initialItems={data.items} />
     </main>
   );
 }
-

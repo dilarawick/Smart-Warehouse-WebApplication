@@ -1,15 +1,16 @@
 import type { ReactNode } from "react";
+import { AppShell } from "./app-shell";
 
 export const metadata = {
-  title: "Smart Warehouse – QR Scans",
-  description: "Recent QR scans from ESP32‑CAM",
+  title: "Smart Warehouse",
+  description: "Warehouse dashboard · QR scans · IoT",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body style={{ margin: 0, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial" }}>
-        {children}
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

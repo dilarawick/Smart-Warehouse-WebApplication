@@ -1,6 +1,5 @@
 import jpeg from "jpeg-js";
 import jsQR from "jsqr";
-import sql from "mssql";
 import { getSqlPool } from "../../../../lib/sql";
 import { setLastCaptureFromJpeg } from "../../../../lib/last-capture";
 
@@ -46,7 +45,12 @@ export async function POST(req: Request) {
         deviceId,
         status: "no_qr",
       });
-      return Response.json({ error: "No QR found" }, { status: 422 });
+      // 200 so simple clients (e.g. ESP32 checking for "200") treat upload as OK.
+      // No row inserted — only frames with a decoded QR go to dbo.QrScans.
+      return Response.json(
+        { ok: true, qrDecoded: false, deviceId, message: "No QR found in frame" },
+        { status: 200 }
+      );
     }
 
     setLastCaptureFromJpeg({
@@ -57,10 +61,13 @@ export async function POST(req: Request) {
     });
 
     const pool = await getSqlPool();
+    // Use two-arg .input(name, value) so types are inferred inside mssql (getTypeByValue).
+    // Explicit sql.NVarChar(...) from the package default export can intermittently break
+    // under Next/Webpack (EPARAM: parameter.type.validate is not a function).
     await pool
       .request()
-      .input("DeviceId", sql.NVarChar(64), deviceId)
-      .input("QrText", sql.NVarChar(2048), qr.data)
+      .input("DeviceId", deviceId.slice(0, 64))
+      .input("QrText", qr.data.slice(0, 2048))
       .query(
         `
         INSERT INTO dbo.QrScans(DeviceId, QrText)
@@ -68,7 +75,7 @@ export async function POST(req: Request) {
         `
       );
 
-    return Response.json({ ok: true, deviceId, qrText: qr.data }, { status: 200 });
+    return Response.json({ ok: true, qrDecoded: true, deviceId, qrText: qr.data }, { status: 200 });
   } catch (err: any) {
     const message = typeof err?.message === "string" ? err.message : "Unknown error";
     console.error("[api/qr/scan]", err);

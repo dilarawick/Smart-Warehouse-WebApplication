@@ -64,4 +64,3 @@ The sketch uploads `image/jpeg` and sends headers:
 
 - `x-device-id`
 - `x-api-key`
-
