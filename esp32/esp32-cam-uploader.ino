@@ -43,6 +43,10 @@ const char* DEVICE_ID = "esp32cam-01";
 
 #define FLASH_LED_PIN 4
 
+// 0..255 (smaller = dimmer). Most ESP32-CAM boards have a very bright flash LED.
+static const uint8_t FLASH_BRIGHTNESS = 40;
+static const uint8_t FLASH_LEDC_CH = 7;
+
 static bool initCamera() {
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
@@ -66,15 +70,33 @@ static bool initCamera() {
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
 
-  // Good starting point for QR readability vs upload size:
-  config.frame_size = FRAMESIZE_VGA; // 640x480
-  config.jpeg_quality = 10;          // lower = better quality, bigger file
+  // Higher QR readability (bigger image + less JPEG compression):
+  // - frame_size: increase resolution
+  // - jpeg_quality: lower = higher quality (bigger upload)
+  config.frame_size = FRAMESIZE_SVGA; // 800x600 (try XGA 1024x768 if stable)
+  config.jpeg_quality = 6;            // 0..63 (lower = better quality)
   config.fb_count = 1;
 
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
     Serial.printf("[CAM] init failed: 0x%x\n", err);
     return false;
+  }
+
+  // Sensor tuning to improve QR clarity/contrast in many indoor setups.
+  sensor_t *s = esp_camera_sensor_get();
+  if (s) {
+    s->set_framesize(s, config.frame_size);
+    s->set_quality(s, config.jpeg_quality);
+    s->set_gainceiling(s, (gainceiling_t)6); // 2..6 (higher can brighten, but may add noise)
+    s->set_exposure_ctrl(s, 1);              // auto exposure
+    s->set_aec2(s, 1);                       // advanced auto exposure
+    s->set_whitebal(s, 1);                   // auto white balance
+    s->set_awb_gain(s, 1);
+    s->set_brightness(s, 1);                 // -2..2
+    s->set_contrast(s, 1);                   // -2..2
+    s->set_saturation(s, 0);                 // -2..2
+    s->set_sharpness(s, 2);                  // -2..2 (if supported; ignored otherwise)
   }
   return true;
 }
@@ -165,8 +187,10 @@ void setup() {
   Serial.begin(115200);
   delay(500);
 
-  pinMode(FLASH_LED_PIN, OUTPUT);
-  digitalWrite(FLASH_LED_PIN, LOW);
+  // Dim flash using PWM (LEDC). This reduces overexposure vs full ON.
+  ledcSetup(FLASH_LEDC_CH, 5000, 8);
+  ledcAttachPin(FLASH_LED_PIN, FLASH_LEDC_CH);
+  ledcWrite(FLASH_LEDC_CH, 0);
 
   if (!initCamera()) {
     Serial.println("[SYSTEM] camera init failed");
@@ -179,10 +203,10 @@ void setup() {
 
 void loop() {
   // Capture with brief flash for better QR contrast
-  digitalWrite(FLASH_LED_PIN, HIGH);
+  ledcWrite(FLASH_LEDC_CH, FLASH_BRIGHTNESS);
   delay(250);
   camera_fb_t* fb = esp_camera_fb_get();
-  digitalWrite(FLASH_LED_PIN, LOW);
+  ledcWrite(FLASH_LEDC_CH, 0);
 
   if (!fb) {
     Serial.println("[CAM] capture failed");
