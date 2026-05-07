@@ -2,7 +2,7 @@
  * Optional: after a QR is decoded, POST to a URL on your LAN/cloud so a
  * microcontroller or PLC can energize the "Category A" slide (solenoid, servo, etc.).
  *
- * Set CONVEYOR_SLIDE_WEBHOOK_URL (e.g. http://192.168.1.50/slide-a) on the Next.js host.
+ * Set CONVEYOR_SLIDE_WEBHOOK_URL (e.g. http://<conveyor-host>/slide-a) on the Next.js host.
  */
 
 const WEBHOOK_TIMEOUT_MS = 4000;

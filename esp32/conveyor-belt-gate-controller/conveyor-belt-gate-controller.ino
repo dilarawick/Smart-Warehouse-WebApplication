@@ -48,7 +48,7 @@
 // ---------- Wi-Fi / API ----------
 const char *WIFI_SSID          = "";
 const char *WIFI_PASS          = "";
-const char *QR_API_BASE_URL    = "http://10.124.192.48:3000";
+const char *QR_API_BASE_URL    = "http://<your-host>:3000";
 const char *API_KEY            = "";
 const char *DEVICE_ID          = "belt-esp32-01";
 const char *BELT_EVENTS_SECRET = "";
@@ -258,6 +258,21 @@ static bool postTelemetry(float tC, float hPct) {
   return code == 200;
 }
 
+static String httpGetServoCommandJson() {
+  if (WiFi.status() != WL_CONNECTED) return "";
+  HTTPClient http;
+  http.setTimeout(3000);
+  http.begin(String(QR_API_BASE_URL) + "/api/belt/servo-command?deviceId=" + String(DEVICE_ID));
+  const int code = http.GET();
+  if (code <= 0) {
+    http.end();
+    return "";
+  }
+  String body = http.getString();
+  http.end();
+  return body;
+}
+
 static void stepMotorNonBlocking() {
   unsigned long now = micros();
   if (now - lastStepUs >= (unsigned long)stepDelayUs) {
@@ -383,6 +398,33 @@ static const unsigned long DHT_INTERVAL_MS = 3000;
 static unsigned long lastTelemetryMs = 0;
 static const unsigned long TELEMETRY_INTERVAL_MS = 2000;
 
+// Servo command polling
+static unsigned long lastServoPollMs = 0;
+static const unsigned long SERVO_POLL_INTERVAL_MS = 800;
+static unsigned long lastServoCmdSeenMs = 0;
+
+static void pollAndApplyServoCommand() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  if (millis() - lastServoPollMs < SERVO_POLL_INTERVAL_MS) return;
+  lastServoPollMs = millis();
+
+  String json = httpGetServoCommandJson();
+  if (json.length() == 0) return;
+
+  // Response shape: { item: { updatedAtMs, deviceId, angleDeg, label } } or { item: null }
+  unsigned long updatedAtMs = 0;
+  if (!jsonExtractNumber(json, "updatedAtMs", updatedAtMs)) return;
+  if (updatedAtMs <= lastServoCmdSeenMs) return;
+
+  unsigned long angleDeg = 0;
+  if (!jsonExtractNumber(json, "angleDeg", angleDeg)) return;
+  lastServoCmdSeenMs = updatedAtMs;
+
+  Serial.printf("[SERVO] command: angle=%lu (updatedAtMs=%lu)\n", angleDeg, updatedAtMs);
+  setGateDeg((int)angleDeg);
+  delay(350);
+}
+
 static int pollQrDecision() {
   if (millis() - qrWaitStart >= QR_TIMEOUT_MS) {
     Serial.println("!! QR wait timeout.");
@@ -465,6 +507,9 @@ void setup() {
 // ---------- loop ----------
 void loop() {
   ensureWiFi();
+
+  // Manual override from UI (does not block belt state machine)
+  pollAndApplyServoCommand();
 
   // Refresh DHT on bottom row every 3 seconds
   if (millis() - lastDhtMs >= DHT_INTERVAL_MS) {

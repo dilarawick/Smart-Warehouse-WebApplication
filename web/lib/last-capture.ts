@@ -1,7 +1,7 @@
 export type LastCapture = {
   imageBase64: string;
   deviceId: string;
-  updatedAt: string;
+  updatedAt: number;
   status: "decoded" | "no_qr";
   qrText?: string;
 };
@@ -17,7 +17,7 @@ export function setLastCaptureFromJpeg(
   lastCapture = {
     imageBase64: buf.toString("base64"),
     deviceId: opts.deviceId,
-    updatedAt: new Date().toISOString(),
+    updatedAt: Date.now(),
     status: opts.status,
     qrText: opts.qrText,
   };

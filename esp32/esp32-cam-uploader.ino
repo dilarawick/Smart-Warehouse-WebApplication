@@ -11,11 +11,11 @@ const char* WIFI_PASS = "";
 // If you are NOT deploying, run Next.js locally and use:
 //   http://<YOUR_PC_LAN_IP>:3000/api/qr/scan
 // Example (your current PC IPv4 from ipconfig):
-//   http://10.124.192.48:3000/api/qr/scan
+//   http://<your-host>:3000/api/qr/scan
 //
 // If you DO deploy to App Service, use:
 //   https://<your-app>.azurewebsites.net/api/qr/scan
-const char* UPLOAD_URL = "http://10.124.192.48:3000/api/qr/scan";
+const char* UPLOAD_URL = "http://<your-host>:3000/api/qr/scan";
 
 // Optional: if your server sets API_KEY, put the same value here. Leave empty to disable.
 const char* API_KEY = "";

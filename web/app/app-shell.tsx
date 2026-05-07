@@ -16,19 +16,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "#f4f4f5" }}>
+    <div style={{ display: "flex", minHeight: "100vh", background: "transparent" }}>
       <aside
         style={{
           width: 268,
           flexShrink: 0,
-          background: "linear-gradient(180deg, #fb923c 0%, #f97316 42%, #ea580c 100%)",
-          color: "#fffbeb",
+          background: "#dcdada",
+          color: "#071a3b",
           padding: "20px 14px",
           display: "flex",
           flexDirection: "column",
           gap: 8,
-          borderRight: "1px solid #c2410c",
-          boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.2)",
+          borderRight: "1px solid rgba(7,26,59,0.06)",
         }}
       >
         <div style={{ position: "relative", height: 96, width: "100%", marginBottom: 4 }}>
@@ -55,12 +54,12 @@ export function AppShell({ children }: { children: ReactNode }) {
               fontWeight: 700,
               letterSpacing: "0.14em",
               textTransform: "uppercase",
-              color: "#ffedd5",
+              color: "#0b2940",
             }}
           >
             Smart Warehouse
           </div>
-          <div style={{ fontWeight: 700, fontSize: 17, marginTop: 4, color: "#ffffff" }}>Dashboard</div>
+          <div style={{ fontWeight: 700, fontSize: 17, marginTop: 4, color: "#071a3b" }}>Dashboard</div>
         </div>
 
         <nav style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -75,20 +74,20 @@ export function AppShell({ children }: { children: ReactNode }) {
                   padding: "12px 14px",
                   borderRadius: 10,
                   textDecoration: "none",
-                  color: active ? "#7c2d0e" : "#fffbeb",
-                  background: active ? "rgba(255, 255, 255, 0.92)" : "rgba(124, 45, 18, 0.22)",
-                  border: active ? "1px solid rgba(255, 255, 255, 0.65)" : "1px solid transparent",
+                  color: active ? "#ffffff" : "#071a3b",
+                  background: active ? "#0b69ff" : "transparent",
+                  border: active ? "1px solid rgba(11,105,255,0.12)" : "1px solid transparent",
                   transition: "background 0.15s, border-color 0.15s",
                 }}
               >
                 <div style={{ fontWeight: 600, fontSize: 15 }}>{item.label}</div>
-                <div style={{ fontSize: 12, color: active ? "#9a3412" : "#ffedd5", marginTop: 2 }}>{item.hint}</div>
+                <div style={{ fontSize: 12, color: active ? "rgba(255,255,255,0.9)" : "#6b7280", marginTop: 2 }}>{item.hint}</div>
               </Link>
             );
           })}
         </nav>
 
-        <div style={{ marginTop: "auto", padding: "12px 10px", fontSize: 12, color: "rgba(255, 247, 237, 0.75)" }}>
+        <div style={{ marginTop: "auto", padding: "12px 10px", fontSize: 12, color: "#475569" }}>
           IoT · QR · Azure SQL
         </div>
       </aside>

@@ -40,16 +40,16 @@ export function LastCapturePreview() {
   return (
     <section
       style={{
-        border: "1px solid #e5e7eb",
+        border: "1px solid rgba(255,255,255,0.06)",
         borderRadius: 12,
         padding: 16,
         marginBottom: 24,
-        background: "#fafafa",
+        background: "#0b3355",
       }}
     >
       <h2 style={{ margin: "0 0 12px", fontSize: 18 }}>Latest camera frame</h2>
-      <p style={{ margin: "0 0 12px", opacity: 0.8, fontSize: 14 }}>
-        Last JPEG received from the ESP32-CAM (updates on each POST to <code>/api/qr/scan</code>).
+      <p style={{ margin: "0 0 12px", opacity: 0.9, fontSize: 14, color: "#e6eef9" }}>
+        Last JPEG received from the ESP32-CAM.
       </p>
       {err ? <div style={{ color: "#b91c1c" }}>{err}</div> : null}
       {data?.image ? (
@@ -67,7 +67,7 @@ export function LastCapturePreview() {
             </span>
           </div>
           {data.qrText ? (
-            <div style={{ fontSize: 14, wordBreak: "break-word" }}>
+            <div style={{ fontSize: 14, wordBreak: "break-word", color: "#e6eef9" }}>
               <strong>QR:</strong> {data.qrText}
             </div>
           ) : null}
@@ -75,11 +75,11 @@ export function LastCapturePreview() {
           <img
             src={data.image}
             alt="Last capture from ESP32-CAM"
-            style={{ maxWidth: "100%", height: "auto", borderRadius: 8, border: "1px solid #e5e7eb" }}
+            style={{ maxWidth: "100%", height: "auto", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)" }}
           />
         </div>
       ) : (
-        <div style={{ opacity: 0.7 }}>No image yet. Point the camera at a scene and wait for the next upload.</div>
+        <div style={{ opacity: 0.85, color: "#e6eef9" }}>No image yet. Point the camera at a scene and wait for the next upload.</div>
       )}
     </section>
   );

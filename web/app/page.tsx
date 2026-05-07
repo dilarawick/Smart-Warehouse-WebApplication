@@ -26,7 +26,7 @@ export default async function HomePage() {
       <LastCapturePreview />
 
       <div style={{ display: "flex", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
-        <code style={{ padding: "8px 10px", background: "#f3f4f6", borderRadius: 8 }}>
+        <code style={{ padding: "8px 10px", background: "#0b3355", borderRadius: 8, color: "#e6eef9" }}>
           GET /api/qr/scans
         </code>
       </div>

@@ -5,6 +5,7 @@ export const metadata = {
 
 import { headers } from "next/headers";
 import { TimeCell } from "./TimeCell";
+import { ServoControls } from "./ServoControls";
 
 type BeltEventRow = {
   Id: number;
@@ -57,10 +58,10 @@ function pill(text: string, bg: string) {
         padding: "4px 10px",
         borderRadius: 999,
         background: bg,
-        border: "1px solid #e4e4e7",
+        border: "1px solid rgba(255,255,255,0.06)",
         fontSize: 12,
         fontWeight: 600,
-        color: "#18181b",
+        color: "#e6eef9",
         whiteSpace: "nowrap",
       }}
     >
@@ -82,26 +83,24 @@ export default async function AnalyticsPage() {
       </p>
 
       <div style={{ display: "flex", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
-        <code style={{ padding: "8px 10px", background: "#f3f4f6", borderRadius: 8 }}>
-          GET /api/belt/events
+        <code style={{ padding: "8px 10px", background: "#0b3355", borderRadius: 8, color: "#e6eef9" }}>
         </code>
-        <code style={{ padding: "8px 10px", background: "#f3f4f6", borderRadius: 8 }}>
-          GET /api/belt/telemetry
+        <code style={{ padding: "8px 10px", background: "#0b3355", borderRadius: 8, color: "#e6eef9" }}>
         </code>
       </div>
 
       <section
         style={{
-          border: "1px solid #e4e4e7",
+          border: "1px solid rgba(255,255,255,0.06)",
           borderRadius: 12,
           padding: 16,
-          background: "#fff",
+          background: "#0f2b4d",
           marginBottom: 14,
         }}
       >
         <h2 style={{ margin: 0, fontSize: 16 }}>Live telemetry (LCD + DHT22)</h2>
         <p style={{ margin: "6px 0 0", fontSize: 13, color: "#71717a" }}>
-          Latest payload posted to <code>POST /api/belt/telemetry</code>.
+          Latest payload posted<code>.</code>
         </p>
 
         {!telemetry ? (
@@ -109,19 +108,20 @@ export default async function AnalyticsPage() {
             No telemetry yet. Once the ESP32 posts temperature/humidity + LCD lines, it’ll appear here.
           </div>
         ) : (
-          <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div style={{ border: "1px solid #e4e4e7", borderRadius: 12, padding: 12, background: "#fafafa" }}>
+            <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div style={{ border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, padding: 12, background: "#0b3355" }}>
               <div style={{ fontSize: 12, color: "#52525b", fontWeight: 700, marginBottom: 8 }}>LCD (16x2)</div>
-              <pre
+                  <pre
                 style={{
                   margin: 0,
                   padding: 12,
                   borderRadius: 10,
-                  border: "1px solid #e4e4e7",
-                  background: "#fff",
+                  border: "1px solid rgba(255,255,255,0.06)",
+                  background: "#0f2b4d",
                   fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
                   fontSize: 13,
                   lineHeight: 1.5,
+                  color: "#e6eef9",
                 }}
               >
                 {(telemetry.lcdLine1 ?? "").padEnd(16).slice(0, 16)}
@@ -130,27 +130,29 @@ export default async function AnalyticsPage() {
               </pre>
             </div>
 
-            <div style={{ border: "1px solid #e4e4e7", borderRadius: 12, padding: 12, background: "#fafafa" }}>
+            <div style={{ border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, padding: 12, background: "#0b3355" }}>
               <div style={{ fontSize: 12, color: "#52525b", fontWeight: 700, marginBottom: 8 }}>
                 DHT22 + device
               </div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                {pill(`Temp: ${telemetry.temperatureC == null ? "—" : `${telemetry.temperatureC.toFixed(1)}°C`}`, "#f3f4f6")}
-                {pill(`RH: ${telemetry.humidityPct == null ? "—" : `${Math.round(telemetry.humidityPct)}%`}`, "#f3f4f6")}
-                {pill(`Device: ${telemetry.deviceId}`, "#f3f4f6")}
-                <span style={{ fontSize: 12, color: "#71717a" }}>{telemetry.updatedAt}</span>
+                {pill(`Temp: ${telemetry.temperatureC == null ? "—" : `${telemetry.temperatureC.toFixed(1)}°C`}`, "#0b3355")}
+                {pill(`RH: ${telemetry.humidityPct == null ? "—" : `${Math.round(telemetry.humidityPct)}%`}`, "#0b3355")}
+                {pill(`Device: ${telemetry.deviceId}`, "#0b3355")}
+                <span style={{ fontSize: 12, color: "#a9c8ee" }}>{telemetry.updatedAt}</span>
               </div>
             </div>
           </div>
         )}
       </section>
 
+      <ServoControls />
+
       <section
         style={{
-          border: "1px solid #e4e4e7",
+          border: "1px solid rgba(255,255,255,0.06)",
           borderRadius: 12,
           padding: 16,
-          background: "#fff",
+          background: "#0f2b4d",
           marginBottom: 14,
         }}
       >
@@ -164,12 +166,12 @@ export default async function AnalyticsPage() {
             No belt events yet. Once the belt ESP32 boots and posts, you’ll see rows here.
           </div>
         ) : (
-          <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            {pill(`Gate: ${latest.GateState}`, latest.GateState === "open" ? "#dcfce7" : "#fee2e2")}
-            {pill(`Belt: ${latest.BeltState}`, latest.BeltState === "running" ? "#dbeafe" : "#f4f4f5")}
-            {pill(`Event: ${latest.EventType}`, "#f3f4f6")}
-            {pill(`Device: ${latest.DeviceId}`, "#f3f4f6")}
-            <span style={{ fontSize: 12, color: "#71717a" }}>
+            <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            {pill(`Gate: ${latest.GateState}`, latest.GateState === "open" ? "#063b2e" : "#551313")}
+            {pill(`Belt: ${latest.BeltState}`, latest.BeltState === "running" ? "#0a2b4c" : "#0b3355")}
+            {pill(`Event: ${latest.EventType}`, "#0b3355")}
+            {pill(`Device: ${latest.DeviceId}`, "#0b3355")}
+            <span style={{ fontSize: 12, color: "#a9c8ee" }}>
               <TimeCell iso={latest.CreatedAtUtc} />
             </span>
           </div>
@@ -178,15 +180,15 @@ export default async function AnalyticsPage() {
 
       <section
         style={{
-          border: "1px solid #e4e4e7",
+          border: "1px solid rgba(255,255,255,0.06)",
           borderRadius: 12,
           overflow: "hidden",
-          background: "#fff",
+          background: "#0f2b4d",
         }}
       >
-        <div style={{ padding: 16, borderBottom: "1px solid #e4e4e7" }}>
+        <div style={{ padding: 16, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
           <h2 style={{ margin: 0, fontSize: 16 }}>Belt events (history)</h2>
-          <p style={{ margin: "6px 0 0", fontSize: 13, color: "#71717a" }}>
+          <p style={{ margin: "6px 0 0", fontSize: 13, color: "#a9c8ee" }}>
             Latest 50 rows, newest first.
           </p>
         </div>
@@ -194,15 +196,15 @@ export default async function AnalyticsPage() {
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
-              <tr style={{ background: "#fafafa" }}>
+              <tr style={{ background: "#0b3355" }}>
                 {["Time (local)", "Device", "Event", "Gate", "Belt", "Note", "QR text"].map((h) => (
                   <th
                     key={h}
                     style={{
                       textAlign: "left",
                       padding: "10px 12px",
-                      borderBottom: "1px solid #e4e4e7",
-                      color: "#52525b",
+                      borderBottom: "1px solid rgba(255,255,255,0.06)",
+                      color: "#cfe8ff",
                       fontWeight: 700,
                       whiteSpace: "nowrap",
                     }}
@@ -222,18 +224,18 @@ export default async function AnalyticsPage() {
               ) : (
                 data.items.map((r) => (
                   <tr key={r.Id}>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f4f4f5", whiteSpace: "nowrap" }}>
+                    <td style={{ padding: "10px 12px", borderBottom: "1px solid rgba(255,255,255,0.04)", whiteSpace: "nowrap" }}>
                       <TimeCell iso={r.CreatedAtUtc} />
                     </td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f4f4f5" }}>{r.DeviceId}</td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f4f4f5" }}>{r.EventType}</td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f4f4f5" }}>{r.GateState}</td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f4f4f5" }}>{r.BeltState}</td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f4f4f5" }}>
-                      <span style={{ color: "#52525b" }}>{r.Note ?? ""}</span>
+                    <td style={{ padding: "10px 12px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>{r.DeviceId}</td>
+                    <td style={{ padding: "10px 12px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>{r.EventType}</td>
+                    <td style={{ padding: "10px 12px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>{r.GateState}</td>
+                    <td style={{ padding: "10px 12px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>{r.BeltState}</td>
+                    <td style={{ padding: "10px 12px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                      <span style={{ color: "#cfe8ff" }}>{r.Note ?? ""}</span>
                     </td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f4f4f5", maxWidth: 420 }}>
-                      <span style={{ color: "#52525b" }}>{r.QrText ?? ""}</span>
+                    <td style={{ padding: "10px 12px", borderBottom: "1px solid rgba(255,255,255,0.04)", maxWidth: 420 }}>
+                      <span style={{ color: "#cfe8ff" }}>{r.QrText ?? ""}</span>
                     </td>
                   </tr>
                 ))

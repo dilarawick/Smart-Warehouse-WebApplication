@@ -49,13 +49,13 @@ export function QrScansLive({ initialItems }: Props) {
   return (
     <>
       {err ? (
-        <div style={{ padding: 12, color: "#b91c1c", borderBottom: "1px solid #fecaca" }}>{err}</div>
+        <div style={{ padding: 12, color: "#fca5a5", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>{err}</div>
       ) : null}
-      <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "160px 160px 1fr", background: "#f9fafb" }}>
-          <div style={{ padding: 12, fontWeight: 600 }}>Time (local)</div>
-          <div style={{ padding: 12, fontWeight: 600 }}>Device</div>
-          <div style={{ padding: 12, fontWeight: 600 }}>QR Text</div>
+      <div style={{ border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "160px 160px 1fr", background: "#0b3355" }}>
+          <div style={{ padding: 12, fontWeight: 600, color: "#cfe8ff" }}>Time (local)</div>
+          <div style={{ padding: 12, fontWeight: 600, color: "#cfe8ff" }}>Device</div>
+          <div style={{ padding: 12, fontWeight: 600, color: "#cfe8ff" }}>QR Text</div>
         </div>
         {items.length === 0 ? (
           <div style={{ padding: 12, opacity: 0.7 }}>No scans yet.</div>
@@ -66,7 +66,9 @@ export function QrScansLive({ initialItems }: Props) {
               style={{
                 display: "grid",
                 gridTemplateColumns: "160px 160px 1fr",
-                borderTop: "1px solid #e5e7eb",
+                borderTop: "1px solid rgba(255,255,255,0.04)",
+                background: "#0f2b4d",
+                color: "#e6eef9",
               }}
             >
               <div style={{ padding: 12, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>

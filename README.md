@@ -46,7 +46,7 @@ API endpoints (served by Next.js):
 
 If you are **not deploying**, set the ESP32 `UPLOAD_URL` to your PC LAN IP (same Wi‑Fi):
 
-- Example: `http://10.124.192.48:3000/api/qr/scan`
+- Example: `http://<your-host>:3000/api/qr/scan`
 
 Your PC must allow inbound connections to port **3000** (Windows Firewall may prompt).
 
